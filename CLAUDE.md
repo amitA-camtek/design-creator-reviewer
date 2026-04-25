@@ -130,3 +130,64 @@ All require a service restart to take effect except `classification_rules_path` 
 | Rules hot-reload active | < 2 s after file save |
 | CatchUpScanner (10 jobs × 150 files, parallel) | < 5 s |
 | Paginated API query (50 rows) | < 200 ms |
+
+---
+
+## Agents
+
+The `.claude/agents/` directory contains 19 general-purpose service design and review agents. All agents are domain-agnostic — they read `service-context.md` from the project folder at runtime to adapt to any service type.
+
+The `service-context.md` file for this project is at the project root. Copy `.claude/agents/service-context-template.md` as a starting point for other projects.
+
+The `.claude/commands/` directory contains slash commands (skills):
+- `/save-output <path>` — writes the last assistant response to a markdown file.
+
+### design-orchestrator — primary entry point
+
+**Design mode** (new service): `@design-orchestrator 'path/to/requirements.md' output='path/to/output'`
+- Reads requirements → asks discovery questions (language? storage? API? deployment?) → generates 3 integrated alternatives → iterates with feedback until approved → writes design files → runs pipeline (sequence diagrams, scaffolding, test plan).
+
+**Review mode** (existing design or codebase): `@design-orchestrator review 'path/to/folder'`
+- Delegates to `full-validator` and produces `comprehensive-review-report.md` and `fix-patches.md`.
+
+### Agent name reference
+
+| Agent | Purpose |
+|---|---|
+| `design-orchestrator` | Single entry point: design a new service (interactive) or review an existing one |
+| `review-orchestrator` | Focused 3-agent review: requirements + security + storage |
+| `full-validator` | Full 8-dimension review (all agents in parallel) |
+| `architecture-designer` | Produces 3 architecture alternatives, user chooses one |
+| `schema-designer` | Produces 3 schema alternatives, user chooses one |
+| `api-designer` | Produces 3 API design alternatives, user chooses one |
+| `sequence-planner` | Produces Mermaid sequence diagrams for the 5 key flows |
+| `code-scaffolder` | Generates language-appropriate class stubs from the design |
+| `test-planner` | Generates test case spec per requirement |
+| `requirements-checker` | Verifies all requirements are satisfied |
+| `security-reviewer` | Reviews threats from service-context.md + OWASP Top 10 |
+| `storage-reviewer` | Reviews SQLite / PostgreSQL / any storage layer |
+| `concurrency-reviewer` | Reviews async/await, threading, race conditions |
+| `api-contract-reviewer` | Reviews API binding, endpoints, pagination, sensitive fields |
+| `language-patterns-reviewer` | Reviews .NET / language idioms, disposal, logging |
+| `performance-checker` | Verifies performance targets from service-context.md |
+| `configuration-validator` | Validates config keys, secrets handling, logging sinks |
+| `fix-generator` | Converts review findings into before/after code patches |
+| `powerpoint-generator` | Generates a .pptx stakeholder presentation from the design package |
+
+### Full output produced by design-orchestrator (design mode)
+
+| File | When written |
+|---|---|
+| `design-alternatives.md` | Phase 1 |
+| `service-context.md` | Phase 1 (draft) → Phase 3 (final with tech fields) |
+| `architecture-design.md` | Phase 3 |
+| `schema-design.md` | Phase 3 |
+| `api-design.md` | Phase 3 |
+| `sequence-diagrams.md` | Phase 4 |
+| `code-scaffolding.md` | Phase 4 |
+| `test-plan.md` | Phase 4 |
+| `comprehensive-review-report.md` | Phase 5 |
+| `fix-patches.md` | Phase 5 |
+| `implementation-plan.md` | Phase 5 |
+| `{service_name}-design.pptx` | Phase 5 |
+| `design-package-summary.md` | Phase 5 |

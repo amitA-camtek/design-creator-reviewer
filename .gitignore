@@ -1,0 +1,32 @@
+# Output folders
+output/
+output_old/
+output_sevvice-context/
+
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.nupkg
+*.snupkg
+
+# Test results
+TestResults/
+coverage/
+
+# Rider / JetBrains
+.idea/
+*.DotSettings.user
+
+# Logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Environment / secrets
+*.env
+appsettings.local.json
+appsettings.Development.json
