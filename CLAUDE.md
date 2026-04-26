@@ -144,7 +144,8 @@ The `.claude/commands/` directory contains slash commands (skills):
 
 ### design-orchestrator — primary entry point
 
-**Design mode** (new service): `@design-orchestrator 'path/to/requirements.md' output='path/to/output'`
+**Design mode** (new service): `@design-orchestrator 'path/to/requirements.md' output='path/to/output' [context='path/to/service-context.md']`
+- `context=` is optional. When omitted, the agent designs technology choices freely — it does **not** auto-discover any `service-context.md` on disk. Pass `context=` only when you want to lock the technology stack.
 - Reads requirements → asks discovery questions (language? storage? API? deployment?) → generates 3 integrated alternatives → iterates with feedback until approved → writes design files → runs pipeline (sequence diagrams, scaffolding, test plan).
 
 **Review mode** (existing design or codebase): `@design-orchestrator review 'path/to/folder'`

@@ -1,294 +1,333 @@
-# FalconAuditService — Query API Design
+# FalconAuditService — API Design
 
-**Framework:** ASP.NET Core 6 (Kestrel, in-process within FalconAuditService)
-**Default binding:** `127.0.0.1:5100` (loopback only) — API-001, API-009
-**Auth:** none on loopback; Windows Authentication optional on LAN (API-010 — Priority L)
-**Mode:** read-only — every SQLite connection is opened with `Mode=ReadOnly` (API-002)
-**Document basis:** ERS-FAU-001 v1.0
+**Document ID:** API-FAU-001
+**Date:** 2026-04-26
+**Framework:** ASP.NET Core minimal API on Kestrel
+**Binding:** `127.0.0.1:5100` by default (API-009)
+**Auth:** none (loopback only — see API-009 / CON-006)
+**Read-only:** every connection uses `Mode=ReadOnly` (API-002, STR-006)
 
 ---
 
-## 1. Hosting
+## 1. Conventions
 
-The Query API runs **inside** the same Windows Service process as the file monitor. ASP.NET Core is started by `Program.cs`:
+### 1.1 Common response envelope
 
-```csharp
-builder.WebHost.ConfigureKestrel(opts =>
+List endpoints return:
+
+```json
 {
-    var bindAddress = config.GetValue<string>("monitor_config:api_bind_address") ?? "127.0.0.1";
-    var port        = config.GetValue<int>   ("monitor_config:api_port",          5100);
-    opts.Listen(IPAddress.Parse(bindAddress), port);
-});
+  "total": 12345,
+  "limit": 50,
+  "offset": 0,
+  "items": [ ... ]
+}
 ```
 
-If `api_bind_address` is anything other than `127.0.0.1` or `::1`, the service logs a startup warning. (API-009)
+Single-resource endpoints return the resource object directly.
 
----
+Errors return:
 
-## 2. Cross-Cutting Behaviour
-
-| Concern | Behaviour |
-|---|---|
-| Content-Type | `application/json; charset=utf-8` on all responses. |
-| Time format | UTC ISO 8601 with milliseconds (`2026-04-25T13:55:01.234Z`). |
-| Errors | RFC 7807 `application/problem+json` for 4xx and 5xx. |
-| Validation failures | 400 with `errors` field. |
-| Job not found | 404. |
-| Internal error | 500 with correlation `traceId`. |
-| Sensitive fields | `old_content` and `diff_text` returned **only** by `GET /api/jobs/{jobName}/events/{id}` (API-006). |
-| Path validation | `jobName` matches `^[\w\-. ]+$`; `rel_filepath` matches `^[\w\-. \\/]+$` (API-008). |
-| Pagination | `page` (1-based, default 1) and `pageSize` (default 50, max 500) — API-005. |
-| Pagination headers | `X-Total-Count`, `X-Page`, `X-PageSize`. |
-
----
-
-## 3. Endpoint Catalogue
-
-### 3.1 `GET /api/jobs`
-
-List all jobs visible to the service (i.e. all `c:\job\<X>\.audit\audit.db` files known to `JobDiscoveryService`).
-
-**Query parameters:** none.
-**Response 200:**
 ```json
-[
-  { "jobName": "Diced_10.0.4511", "auditDbPath": "c:\\job\\Diced_10.0.4511\\.audit\\audit.db", "rowCount": 1421, "lastEventAt": "2026-04-25T11:02:13.001Z" }
-]
-```
-**Storage query (per job):**
-```sql
-SELECT COUNT(1) AS rowCount, MAX(changed_at) AS lastEventAt FROM audit_log;
-```
-**Errors:** 500.
-
----
-
-### 3.2 `GET /api/jobs/{jobName}/manifest`
-
-Return the chain-of-custody manifest for the job.
-
-**Query parameters:** none.
-**Response 200:** the contents of `<jobFolder>\.audit\manifest.json` (MFT-002, MFT-003).
-**Errors:**
-- 400 if `jobName` invalid.
-- 404 if no manifest file exists.
-
----
-
-### 3.3 `GET /api/jobs/{jobName}/files`
-
-List distinct `rel_filepath` values seen in this shard.
-
-**Query parameters:** none.
-**Response 200:**
-```json
-[ { "relFilepath": "S1\\Recipes\\R1\\Recipe.ini", "eventCount": 14, "lastChangedAt": "..." } ]
-```
-**Storage query:**
-```sql
-SELECT rel_filepath, COUNT(1) AS eventCount, MAX(changed_at) AS lastChangedAt
-FROM audit_log
-GROUP BY rel_filepath
-ORDER BY rel_filepath;
-```
-**Errors:** 400 invalid jobName; 404 unknown jobName.
-
----
-
-### 3.4 `GET /api/jobs/{jobName}/events` (LIST — sensitive fields **omitted**)
-
-Filter and paginate events.
-
-**Query parameters (all optional, all combined with AND):**
-
-| Parameter | Type | Validation | SQL fragment |
-|---|---|---|---|
-| `module` | string | length <= 64 | `module = @module` |
-| `priority` | enum (`P1\|P2\|P3`) | exact match | `monitor_priority = @priority` |
-| `service` | string | length <= 64 | `owner_service = @service` |
-| `eventType` | enum (`Created\|Modified\|Deleted\|Renamed`) | exact | `event_type = @eventType` |
-| `from` | ISO 8601 | round-trip parse | `changed_at >= @from` |
-| `to` | ISO 8601 | round-trip parse | `changed_at < @to` |
-| `machine` | string | length <= 64 | `machine_name = @machine` |
-| `path` | string (substring) | length <= 256 | `rel_filepath LIKE @path` (escaped, with `% ... %`) |
-| `page` | int | >= 1, default 1 | OFFSET = (page-1)*pageSize |
-| `pageSize` | int | 1..500, default 50 | LIMIT |
-
-**Response 200:** array of events (NO `old_content`, NO `diff_text`).
-```json
-[
-  {
-    "id": 17231,
-    "changedAt": "2026-04-25T11:02:13.001Z",
-    "eventType": "Modified",
-    "filepath": "c:\\job\\Diced_10.0.4511\\S1\\Recipes\\R1\\Recipe.ini",
-    "relFilepath": "S1\\Recipes\\R1\\Recipe.ini",
-    "module": "RMS",
-    "ownerService": "AOI_Main",
-    "monitorPriority": "P1",
-    "machineName": "FALCON-08",
-    "sha256Hash": "ab12...e9"
+{
+  "error": {
+    "code": "INVALID_PATH",
+    "message": "rel_filepath contains forbidden characters"
   }
-]
-```
-**Response headers:** `X-Total-Count`, `X-Page`, `X-PageSize`.
-
-**Storage query (parameterised, all fragments AND-joined):**
-```sql
-SELECT id, changed_at, event_type, filepath, rel_filepath, module, owner_service,
-       monitor_priority, machine_name, sha256_hash
-  FROM audit_log
- WHERE 1=1
-   AND module           = @module                  -- only if provided
-   AND monitor_priority = @priority                -- only if provided
-   AND owner_service    = @service                 -- only if provided
-   AND event_type       = @eventType               -- only if provided
-   AND changed_at      >= @from                    -- only if provided
-   AND changed_at       < @to                      -- only if provided
-   AND machine_name     = @machine                 -- only if provided
-   AND rel_filepath  LIKE @path                    -- only if provided
- ORDER BY changed_at DESC
- LIMIT @pageSize OFFSET @offset;
+}
 ```
 
-Total-count companion query:
-```sql
-SELECT COUNT(1) FROM audit_log WHERE {same WHERE clause};
-```
+### 1.2 Status codes
 
-**Errors:**
-- 400 (`from` after `to`, invalid enum, oversized parameter).
-- 404 unknown jobName.
-- 500.
+| Code | Meaning |
+|---|---|
+| `200 OK` | Successful query |
+| `400 Bad Request` | Invalid query parameter (path, range, type) |
+| `404 Not Found` | Job or event id not found |
+| `500 Internal Server Error` | Unexpected exception (logged) |
+| `503 Service Unavailable` | Database file present but not openable (transient) |
 
-**Performance target:** < 200 ms for a 50-row page (PERF-005).
+### 1.3 Validation rules
+
+All path-like parameters (`job`, `path`) are validated against `^[\w\-. \\/]+$` before use (API-008, CON-005). Specifically rejected:
+- Strings containing `..` (parent traversal)
+- Strings starting with `/`, `\`, or a drive letter (absolute paths)
+- Strings longer than 260 characters
+
+Date parameters must be ISO 8601 UTC (`2026-04-26T08:14:22Z` or `2026-04-26`). `from <= to` enforced; both bounds inclusive on `from`, exclusive on `to`.
+
+`limit` must be in `[1, 500]`; default 50. `offset` must be `>= 0`; default 0.
+
+### 1.4 Sensitive fields
+
+Two fields are considered sensitive: `old_content` and `diff_text`. They are returned **only** by `GET /api/events/{job}/{id}` (API-006). Any list endpoint that includes them is a bug.
 
 ---
 
-### 3.5 `GET /api/jobs/{jobName}/events/{id}` (SINGLE — sensitive fields **included**)
+## 2. Endpoints
 
-Return one event row with all fields including `old_content` and `diff_text` (API-006).
+### 2.1 `GET /api/health`
 
-**Path parameters:** `id` integer.
-**Storage query:**
-```sql
-SELECT id, changed_at, event_type, filepath, rel_filepath, module, owner_service,
-       monitor_priority, machine_name, sha256_hash, old_content, diff_text
-  FROM audit_log
- WHERE id = @id;
-```
-**Errors:** 400 invalid jobName/id; 404 not found.
+**Purpose:** Liveness probe.
 
----
-
-### 3.6 `GET /api/jobs/{jobName}/history/{*filePath}`
-
-Return all events for a single file in chronological order.
-
-**Path parameters:** `filePath` — required `rel_filepath`. Validated against `^[\w\-. \\/]+$` (API-008).
-**Query parameters:** `page`, `pageSize` as in §3.4.
-**Storage query:**
-```sql
-SELECT id, changed_at, event_type, machine_name, sha256_hash
-  FROM audit_log
- WHERE rel_filepath = @relFilepath
- ORDER BY changed_at DESC
- LIMIT @pageSize OFFSET @offset;
-```
-Sensitive fields are omitted (this is a list endpoint, API-006).
-
-**Errors:** 400 invalid path; 404 unknown jobName.
-
----
-
-### 3.7 `GET /api/global/events`
-
-Same shape and parameters as §3.4, but bound to `C:\bis\auditlog\global.db` (STR-002).
-
-**Implementation:** internally identical to `GET /api/jobs/{jobName}/events` with the database path resolved to the global db.
-
----
-
-### 3.8 `GET /health`
-
-Liveness/readiness probe.
+**Query parameters:** none.
 
 **Response 200:**
+
 ```json
 {
   "status": "ok",
-  "uptimeSeconds": 1234,
-  "watcherActive": true,
-  "shardsOpen": 7,
-  "rulesLoadedAt": "2026-04-25T08:11:02.000Z"
+  "service": "FalconAuditService",
+  "uptime_seconds": 4823,
+  "machine_name": "FALCON-03",
+  "active_job_count": 1
 }
 ```
-No auth, no DB access. Returns 503 with the same body if `watcherActive == false`.
+
+**Errors:** none — returns 200 as long as the host is up.
+
+**Storage query:** none.
 
 ---
 
-## 4. Error Response Schema
+### 2.2 `GET /api/jobs`
+
+**Purpose:** List active jobs known to the service (API-007).
+
+**Query parameters:** none.
+
+**Response 200:**
 
 ```json
 {
-  "type": "https://camtek.com/falconaudit/problems/invalid-parameter",
-  "title": "Invalid parameter",
-  "status": 400,
-  "detail": "'priority' must be one of P1, P2, P3.",
-  "traceId": "00-...-01"
+  "total": 1,
+  "items": [
+    {
+      "name": "Lot-A-2026-04-26",
+      "shard_path": "C:\\job\\Lot-A-2026-04-26\\.audit\\audit.db",
+      "first_observed_at": "2026-04-26T08:14:22Z",
+      "last_event_at": "2026-04-26T09:55:01Z",
+      "event_count": 412,
+      "monitor_machine": "FALCON-03"
+    }
+  ]
 }
 ```
 
-| Status | When |
-|---|---|
-| 400 | invalid parameter, malformed jobName/relFilepath, oversized field |
-| 404 | jobName unknown, manifest missing, event id missing |
-| 500 | unexpected error (logged with traceId) |
-| 503 | health: watcher not active |
+**Source:** `JobDiscoveryService.CurrentJobs` — an in-memory `ImmutableList<JobInfo>` refreshed every 30 s and on `JobArrived/Departed` (and via `status.ini` FSW TODO).
+
+**Storage query:** none — all data is in-memory.
 
 ---
 
-## 5. JobDiscoveryService
+### 2.3 `GET /api/events`
 
-`IHostedService` running an initial scan plus a 30-second `PeriodicTimer`. Maintains an internal `ConcurrentDictionary<string, string>` mapping `jobName → audit.db absolute path`. The dictionary is the source of truth for "does jobName exist?" in API endpoints. (API-007)
+**Purpose:** Paginated audit event list across one or all jobs (API-003, API-005, API-006).
 
+**Query parameters:**
+
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `job` | string | no | (all) | Job name; if omitted, queries every active shard and the global DB |
+| `priority` | int (1-4) | no | (any) | Monitor priority filter |
+| `path` | string | no | (any) | Substring match on `rel_filepath` (validated) |
+| `from` | ISO 8601 | no | (none) | Inclusive lower bound on `changed_at` |
+| `to` | ISO 8601 | no | (none) | Exclusive upper bound on `changed_at` |
+| `event_type` | string | no | (any) | One of `Created`, `Modified`, `Deleted`, `Renamed`, `CustodyHandoff` |
+| `limit` | int | no | 50 | Page size, max 500 |
+| `offset` | int | no | 0 | Page offset |
+
+**Response 200:**
+
+```json
+{
+  "total": 1287,
+  "limit": 50,
+  "offset": 0,
+  "items": [
+    {
+      "id": 41827,
+      "job": "Lot-A-2026-04-26",
+      "changed_at": "2026-04-26T09:55:01.314Z",
+      "event_type": "Modified",
+      "filepath": "C:\\job\\Lot-A-2026-04-26\\Recipes\\R001.xml",
+      "rel_filepath": "Recipes\\R001.xml",
+      "filename": "R001.xml",
+      "file_extension": ".xml",
+      "module": "RecipeEngine",
+      "owner_service": "Recipe.Net",
+      "monitor_priority": 1,
+      "machine_name": "FALCON-03",
+      "old_hash": "ab12...",
+      "new_hash": "cd34...",
+      "description": "Recipe parameter changed",
+      "is_content_omitted": false
+    }
+  ]
+}
 ```
-Initial scan path glob:  c:\job\*\.audit\audit.db
-Refresh interval:        TimeSpan.FromSeconds(30)
+
+`old_content` and `diff_text` are intentionally omitted (API-006).
+
+**Storage query (per shard):** see `schema-design.md` §7.5 for the page query and §7.6 for `COUNT(*)`. They run in parallel via `Task.WhenAll`. For the cross-job case (no `job` filter), each shard's page is queried in parallel and merged in memory using a min-heap on `changed_at DESC`, `id DESC`, then trimmed to `limit`.
+
+**Errors:**
+- `400 INVALID_PATH` — `path` fails the regex
+- `400 INVALID_RANGE` — `from > to`
+- `400 INVALID_PRIORITY` — `priority` outside `[1, 4]`
+- `400 INVALID_LIMIT` — `limit` outside `[1, 500]`
+- `404 JOB_NOT_FOUND` — `job=...` provided but unknown to `JobDiscoveryService`
+
+**Performance budget:** PERF-005 — p95 < 200 ms for a 50-row page on a typical shard. Mitigated by:
+- `ix_audit_priority_time` composite index
+- `COUNT(*)` cache (30 s TTL) keyed by `(job, filter-hash)`
+- Reader connections opened with `Mode=ReadOnly` and disposed after the request
+
+---
+
+### 2.4 `GET /api/events/{job}/{id}`
+
+**Purpose:** Full event detail including sensitive fields (API-004).
+
+**Path parameters:**
+
+| Name | Type | Validation |
+|---|---|---|
+| `job` | string | regex `^[\w\-. ]+$`; must exist in `JobDiscoveryService` |
+| `id` | int | `> 0` |
+
+**Query parameters:** none.
+
+**Response 200:** identical shape to a list item plus the two sensitive fields:
+
+```json
+{
+  "id": 41827,
+  "job": "Lot-A-2026-04-26",
+  "changed_at": "2026-04-26T09:55:01.314Z",
+  "event_type": "Modified",
+  "filepath": "C:\\job\\Lot-A-2026-04-26\\Recipes\\R001.xml",
+  "old_filepath": null,
+  "rel_filepath": "Recipes\\R001.xml",
+  "filename": "R001.xml",
+  "file_extension": ".xml",
+  "module": "RecipeEngine",
+  "owner_service": "Recipe.Net",
+  "monitor_priority": 1,
+  "matched_pattern_id": "rule-recipes-xml",
+  "machine_name": "FALCON-03",
+  "old_hash": "ab12...",
+  "new_hash": "cd34...",
+  "description": "Recipe parameter changed",
+  "is_content_omitted": false,
+  "created_by_catchup": false,
+  "old_content": "<recipe>... old XML ...</recipe>",
+  "diff_text": "@@ -1,5 +1,5 @@\n-<param name='speed'>10</param>\n+<param name='speed'>12</param>\n"
+}
 ```
 
-A removed shard is dropped from the dictionary; the next request for that job returns 404.
+**Storage query:** see `schema-design.md` §7.7.
+
+**Errors:**
+- `400 INVALID_JOB` — job name fails regex
+- `400 INVALID_ID` — id is not a positive integer
+- `404 JOB_NOT_FOUND` — job not in the active list
+- `404 EVENT_NOT_FOUND` — id not in the shard
 
 ---
 
-## 6. Authentication
+## 3. Cross-cutting concerns
 
-- Default loopback bind requires no authentication.
-- Optional Windows Authentication (`Microsoft.AspNetCore.Authentication.Negotiate`) when `api_bind_address != 127.0.0.1`. (API-010, Priority L)
-- Whether enabled or not, the read-only enforcement (`Mode=ReadOnly`) and the path-validation rules apply equally.
+### 3.1 Connection management
+
+Every API request opens a fresh `SqliteConnection(Mode=ReadOnly)` on the target shard, executes its SQL, and disposes via `await using`. **No reader connection is cached.** This avoids the complexity of recycling reader connections and trades a small (~1 ms) per-request open cost.
+
+### 3.2 Concurrency
+
+Each ASP.NET Core request runs on the framework thread pool. Because we open a per-request reader connection and rely on WAL, multiple concurrent reads on the same shard are safe and fast (STR-006).
+
+### 3.3 Error handling
+
+A single ASP.NET Core exception handler middleware:
+1. Catches every uncaught exception.
+2. Logs at `Error` with the request path, query string, and stack.
+3. Returns a `500` with a generic `{ "error": { "code": "INTERNAL", "message": "..." } }` — never leaks internal details (CON-006).
+
+### 3.4 Logging
+
+Every request emits a structured Serilog log line with `request_path`, `status`, `elapsed_ms`, `total` (when applicable). At `Information` level under normal use; bumped to `Warning` for `4xx`, `Error` for `5xx`.
+
+### 3.5 Binding (API-009)
+
+Configured in `Program.cs`:
+
+```csharp
+builder.WebHost.ConfigureKestrel(options =>
+{
+    var bindLoopbackOnly = config.Get<MonitorConfig>().ApiBindLoopbackOnly;
+    if (bindLoopbackOnly)
+        options.ListenLocalhost(config.ApiPort);
+    else
+        options.ListenAnyIP(config.ApiPort);   // explicit opt-in only
+});
+```
+
+The default of `api_bind_loopback_only = true` enforces API-009. Changing to `false` requires explicit edit in `appsettings.json` and a restart, with a warning log line on bind.
+
+### 3.6 Authentication
+
+None — loopback-only by design (API-009). If non-loopback is enabled, the operator must put the API behind a reverse proxy or VPN; the service does not perform authentication itself.
 
 ---
 
-## 7. Sensitive-Field Isolation Test (verification)
+## 4. Endpoint -> requirement matrix
 
-A unit test enumerates every endpoint defined by `QueryController` reflection and asserts that:
-- Endpoints whose route ends in `/events/{id}` are the only ones permitted to project `old_content` / `diff_text`.
-- All other endpoints' projection lists exclude both column names.
-
-This codifies API-006 against future regressions.
-
----
-
-## 8. Mapping Endpoints to Requirements
-
-| Endpoint | Requirements satisfied |
+| Endpoint | Requirements covered |
 |---|---|
-| `GET /api/jobs` | API-001, API-003 |
-| `GET /api/jobs/{jobName}/manifest` | API-003, MFT-008 |
-| `GET /api/jobs/{jobName}/files` | API-003 |
-| `GET /api/jobs/{jobName}/events` | API-001, API-003, API-004, API-005, API-006, API-008, PERF-005 |
-| `GET /api/jobs/{jobName}/events/{id}` | API-003, API-006 |
-| `GET /api/jobs/{jobName}/history/{*filePath}` | API-003, API-008 |
-| `GET /api/global/events` | API-003, STR-002 |
-| `GET /health` | (operational, supports SVC monitoring) |
-| All endpoints | API-002 (read-only), API-009 (loopback default) |
+| `GET /api/health` | API-001 (port configurable) |
+| `GET /api/jobs` | API-007 |
+| `GET /api/events` | API-001, API-002, API-003, API-005, API-006, API-008, API-009, CON-004, CON-005, CON-006 |
+| `GET /api/events/{job}/{id}` | API-004, API-006, API-008, CON-004, CON-005 |
+
+---
+
+## 5. OpenAPI fragment (sketch)
+
+A full OpenAPI 3.0 document is out of scope for greenfield, but the design includes a `Swashbuckle.AspNetCore` reference so `/swagger/v1/swagger.json` is auto-generated from the minimal-API `.WithName(...)`/`.WithTags(...)` annotations on each endpoint.
+
+```yaml
+paths:
+  /api/health:
+    get:
+      tags: [meta]
+      responses: { '200': { description: ok } }
+  /api/jobs:
+    get:
+      tags: [jobs]
+      responses: { '200': { description: ok } }
+  /api/events:
+    get:
+      tags: [events]
+      parameters:
+        - { name: job,         in: query, schema: { type: string } }
+        - { name: priority,    in: query, schema: { type: integer, minimum: 1, maximum: 4 } }
+        - { name: path,        in: query, schema: { type: string } }
+        - { name: from,        in: query, schema: { type: string, format: date-time } }
+        - { name: to,          in: query, schema: { type: string, format: date-time } }
+        - { name: event_type,  in: query, schema: { type: string, enum: [Created, Modified, Deleted, Renamed, CustodyHandoff] } }
+        - { name: limit,       in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 500 } }
+        - { name: offset,      in: query, schema: { type: integer, default: 0,  minimum: 0 } }
+      responses:
+        '200': { description: ok }
+        '400': { description: validation error }
+        '404': { description: job not found }
+  /api/events/{job}/{id}:
+    get:
+      tags: [events]
+      parameters:
+        - { name: job, in: path, required: true, schema: { type: string } }
+        - { name: id,  in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: ok }
+        '404': { description: not found }
+```

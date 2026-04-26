@@ -10,6 +10,16 @@
 
 The system shall provide a continuous, tamper-evident audit trail of file changes occurring within a watched job directory tree. Every change event shall be recorded, classified, and made queryable, with all data portable alongside the job it describes.
 
+look at files
+files:
+C:\Claude\design-creator-reviewer\filesSummery\02_file_summary.md
+C:\Claude\design-creator-reviewer\filesSummery\021_files_description.md
+C:\Claude\design-creator-reviewer\filesSummery\FileClassificationRules.json
+system:
+C:\Claude\design-creator-reviewer\filesSummery\system.md
+codebase folder
+C:\Claude\design-creator-reviewer\filesSummery\C:\CamtekGit\BIS\Sources
+
 ---
 
 ## 2. Service Operation
@@ -68,7 +78,7 @@ The system shall provide a continuous, tamper-evident audit trail of file change
 
 ## 5. Record Keeping
 
-**REC-001** Each audit record shall include: absolute file path, path relative to the watch root, filename, file extension, change type, old hash, new hash, monitoring priority, module, owning service, timestamp (ISO 8601 UTC), and machine name.
+**REC-001** Each audit record shall include: absolute file path, path relative to the watch root, filename, file extension, change type, old hash, new hash, monitoring priority, module, owning service, timestamp (ISO 8601 UTC), user frendly description ,and machine name.
 
 **REC-002** The hash of each file version shall be recorded to support integrity verification.
 

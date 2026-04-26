@@ -316,135 +316,220 @@ Be intentional — review agents should be read-only; fixer agents can have writ
 
 ## Part 10 — Validation Pipeline (Full Coverage)
 
-The original `falcon-orchestrator` runs 3 review agents. The **validation pipeline** adds 5 more specialist agents and a second orchestrator (`falcon-validator`) that runs all 8 in parallel for a complete design gate.
+The original `falcon-orchestrator` runs 3 review agents. The **validation pipeline** adds 5 more specialist agents and two generic orchestrators that work for any service type.
 
-### New subagents
+### The 8 review subagents
 
 | Agent | Model | Focus |
 |---|---|---|
-| `concurrency-reviewer` | opus | async/await, CancellationToken, debounce race conditions, FSW threading, SemaphoreSlim outside DB layer, BackgroundService shutdown |
-| `api-contract-reviewer` | sonnet | REST endpoints vs API-* requirements, Kestrel binding, Mode=ReadOnly, pagination, sensitive field isolation (API-006) |
-| `dotnet-patterns-reviewer` | sonnet | IDisposable/using, BackgroundService lifecycle order, unhandled Task exceptions, null safety, logging discipline |
-| `performance-checker` | sonnet | PERF-001–PERF-005 targets, FSW 64 KB buffer, CatchUpScanner parallel Tasks, SQL index coverage |
-| `configuration-validator` | haiku | appsettings.json completeness and defaults, Serilog sinks (rolling file + Windows Event Log), install script |
+| `requirements-checker` | opus | Verify all requirement IDs are satisfied |
+| `security-reviewer` | opus | OWASP Top 10 + threat model from `service-context.md` |
+| `storage-reviewer` | sonnet | SQLite / PostgreSQL / any storage layer correctness |
+| `concurrency-reviewer` | opus | async/await, CancellationToken, race conditions, shared state |
+| `api-contract-reviewer` | sonnet | REST endpoints, binding, pagination, sensitive field isolation |
+| `language-patterns-reviewer` | sonnet | Language/runtime idioms, disposal, logging discipline |
+| `performance-checker` | sonnet | Performance targets from `service-context.md` perf_targets |
+| `configuration-validator` | haiku | Config keys, secrets handling, logging sinks |
 
 **Why `haiku` for configuration-validator?** The task is purely mechanical — check a list of keys against a list of required values. There is no complex reasoning. Haiku is faster and cheaper for this class of work.
 
-### New orchestrator: `falcon-validator`
+**Why agents are domain-agnostic:** Each reviewer reads `service-context.md` at runtime to adapt to the project's technology stack. The same `storage-reviewer` handles SQLite WAL checks for one service and PostgreSQL connection-pool checks for another — no separate agent required.
+
+### The two review orchestrators
 
 ```yaml
-name: falcon-validator
+name: review-orchestrator
 tools: Read, Glob, Write, Agent
 model: opus
 ```
+Runs 3 agents (requirements, security, storage) and synthesises one prioritised action plan. Use for a quick focused check.
 
-Runs all 8 agents simultaneously and writes `comprehensive-review-report.md`.
+```yaml
+name: full-validator
+tools: Read, Glob, Write, Agent
+model: opus
+```
+Runs all 8 agents in parallel and writes `comprehensive-review-report.md` + `fix-patches.md`. Use as a full gate before finalising a design.
 
 ```
-@falcon-validator Review the design in 'C:\path\to\design\folder'
+@full-validator Review the design in 'C:\path\to\design\folder'
 ```
 
 ### When to use which orchestrator
 
 | Orchestrator | Agents | Use when |
 |---|---|---|
-| `falcon-orchestrator` | 3 | Quick check — requirements, security, storage only |
-| `falcon-validator` | 8 | Full gate — all dimensions before finalising a design |
+| `review-orchestrator` | 3 | Quick check — requirements, security, storage only |
+| `full-validator` | 8 | Full gate — all 8 dimensions before finalising a design |
 
 ---
 
 ## Part 11 — Generation Pipeline (Design from Requirements)
 
-The generation pipeline takes `engineering_requirements.md` as input and produces a complete design package. It has a two-stage interactive workflow: first generate alternatives, then proceed after the user chooses.
+The generation pipeline takes a requirements file as input and produces a complete design package. `design-orchestrator` is the single entry point — it runs the entire lifecycle through a **gated, phase-based workflow** that pauses for user confirmation at every major step.
 
-### New generation agents
-
-| Agent | Model | Tools | Output |
-|---|---|---|---|
-| `architecture-designer` | opus | Read, Grep, Glob, Write | 3 architecture alternatives → user chooses → `architecture-design.md` |
-| `schema-designer` | sonnet | Read, Grep, Glob, Write | 3 schema alternatives → user chooses → `schema-design.md` |
-| `api-designer` | sonnet | Read, Grep, Glob, Write | 3 API alternatives → user chooses → `api-design.md` |
-| `sequence-planner` | opus | Read, Grep, Glob, Write | Mermaid sequence diagrams for 5 key flows → `sequence-diagrams.md` |
-| `code-scaffolder` | sonnet | Read, Grep, Glob, Write | C# class stubs, interfaces, DI registration → `code-scaffolding.md` |
-| `fix-generator` | opus | Read, Grep, Glob, Write | Code patches from review-report.md → `fix-patches.md` |
-| `test-planner` | sonnet | Read, Grep, Glob, Write | Test case spec per requirement ID → `test-plan.md` |
-
-**Key design — three alternatives per designer:**
-Each of the three design agents (`architecture-designer`, `schema-designer`, `api-designer`) generates three alternatives (A = minimal, B = balanced/recommended, C = comprehensive) and a benchmark comparison table. This forces an explicit design decision from the developer rather than accepting the first design produced.
-
-### The 3-alternatives pattern
+### Invocation
 
 ```
-Agent produces:
-  <dimension>-alternatives.md  ← three options with benchmark comparison
-  
-User reads and chooses → replies with chosen letter (A, B, or C)
-
-Agent saves:
-  <dimension>-design.md  ← the chosen option in full detail
+@design-orchestrator path/to/requirements.md output='path/to/output'
 ```
 
-### New orchestrator: `design-orchestrator`
-
-```yaml
-name: design-orchestrator
-tools: Read, Glob, Write, Agent
-model: opus
-```
-
-**Two-stage invocation** (the orchestrator has two modes):
-
-**Stage 1 — generate alternatives:**
-```
-@design-orchestrator Generate alternatives from 'C:\path\to\folder'
-```
-Runs architecture-designer, schema-designer, and api-designer in parallel.
-Writes `design-choices.md` — a consolidated benchmark table for all three dimensions.
-Tells the user to choose and run Stage 2.
-
-**Stage 2 — proceed with choices:**
-```
-@design-orchestrator Proceed with arch=B schema=B api=B in 'C:\path\to\folder'
-```
-Saves the chosen `*-design.md` files, then runs sequence-planner → code-scaffolder + test-planner in order.
-Writes `design-package-summary.md` listing all output files.
-
-### Full generation flow
+Or for review mode:
 
 ```
-Stage 1 (parallel):
-  architecture-designer → architecture-alternatives.md
-  schema-designer       → schema-alternatives.md
-  api-designer          → api-alternatives.md
-                        → design-choices.md (consolidated)
-                           [USER CHOOSES]
-Stage 2:
-  architecture-designer → architecture-design.md  (parallel)
-  schema-designer       → schema-design.md         (parallel)
-  api-designer          → api-design.md             (parallel)
-  sequence-planner      → sequence-diagrams.md      (sequential, needs arch)
-  code-scaffolder       → code-scaffolding.md       (parallel)
-  test-planner          → test-plan.md              (parallel)
-                        → design-package-summary.md
+@design-orchestrator review 'path/to/existing/folder'
 ```
 
-### Recommended end-to-end workflow
+### The phase pipeline
+
+`design-orchestrator` runs five phases in sequence. Phases 0–2 are interactive (user must answer or approve before the next phase starts). Phases 3–5 each pause and show a summary before proceeding.
 
 ```
-1. @design-orchestrator Generate alternatives from '<folder>'
-   → Review design-choices.md and the three alternatives files
+Phase 0   Read requirements + infer service name
+Phase 0.5 Ask discovery questions              ← waits for user answers
+Phase 1   Generate 3 named design alternatives ← waits for user to choose
+Phase 2   Iterate until approved               ← loops until explicit approval
+Phase 3   Write architecture, schema, API, service-context files
+          → pause: show summary, ask "proceed or revise?"  ← waits
+Phase 4   Run pipeline agents in parallel (sequence-planner, code-scaffolder, test-planner)
+          → pause: show summary, ask "proceed or skip review?" ← waits
+Phase 5   Run full-validator (8 dimensions), synthesise recommendations, write implementation plan
+```
 
-2. @design-orchestrator Proceed with arch=B schema=B api=B in '<folder>'
-   → Full design package generated
+### Phase 0.5 — Discovery questions
 
-3. @falcon-validator Review the design in '<folder>'
-   → comprehensive-review-report.md with findings across 8 dimensions
+Before generating any alternatives, the orchestrator asks 2–4 questions that the requirements file alone can't answer: existing-stack constraints, operational environment, quality-attribute priorities, delivery timeline. All questions are asked in a single message; the user answers once and Phase 1 begins.
 
-4. @fix-generator Fix findings in '<folder>'
-   → fix-patches.md with concrete code patches
+**Why this matters:** Technology choices made in Phase 1 are much better when the orchestrator knows "we already use PostgreSQL" or "this machine has no internet access". Asking upfront avoids generating three alternatives the user will immediately reject.
+
+### Phase 1 — Three named alternatives
+
+The orchestrator generates three meaningfully different technology stacks, each covering five dimensions: architecture, storage, API/interface, deployment, and infrastructure requirements. Alternatives are named after their defining characteristic ("Embedded SQLite Worker", "Event-Driven PostgreSQL Pipeline") — never generic A/B/C labels.
+
+The orchestrator writes `explore/design-alternatives.md` and asks the user to choose or request changes.
+
+### Phase 2 — Iterate until approved
+
+The orchestrator revises the preferred alternative based on feedback and re-presents it until the user explicitly approves ("approved", "proceed", "looks good"). Only then does Phase 3 begin.
+
+**The key invariant:** the orchestrator never writes design files until the user has explicitly approved a direction.
+
+### Phase 3 — Write design files directly
+
+After approval, the orchestrator writes four files itself using the Write tool — it does **not** delegate to `architecture-designer`, `schema-designer`, or `api-designer`. This is intentional: delegating to three separate agents for a single approved design adds latency and risks divergence between files.
+
+Files written:
+- `architecture-design.md`
+- `schema-design.md`
+- `api-design.md`
+- `explore/service-context.md` (all tech fields populated)
+
+Then it pauses: presents a one-line summary of each file and asks the user to confirm before the pipeline runs.
+
+### Phase 4 — Pipeline (parallel subagents)
+
+Three agents run in parallel:
+
+| Subagent | Output |
+|---|---|
+| `sequence-planner` | `pipeline/sequence-diagrams.md` — Mermaid diagrams for 5 key flows |
+| `code-scaffolder` | `pipeline/code-scaffolding.md` — class/module stubs with DI registration |
+| `test-planner` | `pipeline/test-plan.md` — test case spec per requirement ID |
+
+After all three complete, the orchestrator pauses again and presents a summary. The user can say "proceed" to run the full review or "skip review" to stop here.
+
+### Phase 5 — Review, synthesis, and recommendations
+
+1. Spawns `full-validator` (8 agents in parallel).
+2. Reads `comprehensive-review-report.md` and `fix-patches.md`.
+3. **Synthesises recommendations** — determines the single blocking issue that gates all other work, classifies Critical findings as design blockers vs implementation bugs, and orders fixes by dependency.
+4. Writes `implementation-plan.md` with:
+   - **Phase 6a — Design blockers:** Critical findings that must fix the design files before any code is written, in dependency order
+   - **Phase 6b — Implementation must-fixes:** Critical/High bugs to resolve during coding, grouped by component
+   - **"What to do next"** section — a "Start here" sentence + numbered immediate actions + during-implementation list
+5. Writes `design-package-summary.md` and spawns `powerpoint-generator`.
+
+### Full output produced
+
+```
+{output_folder}/
+├── architecture-design.md
+├── schema-design.md
+├── api-design.md
+├── implementation-plan.md        ← includes "What to do next" section
+├── design-package-summary.md
+├── explore/
+│   ├── design-alternatives.md
+│   └── service-context.md
+├── pipeline/
+│   ├── sequence-diagrams.md
+│   ├── code-scaffolding.md
+│   └── test-plan.md
+├── review/
+│   ├── comprehensive-review-report.md
+│   └── fix-patches.md
+└── assets/
+    └── {service_name}-design.pptx
 ```
 
 ### Why generation agents have `Write` in their tools
 
 Review agents (`requirements-checker`, `security-reviewer`, etc.) are deliberately read-only — a review agent that modifies files could corrupt the thing it is reviewing. Generation agents have `Write` because producing artifacts *is* their job. The tools list matches the agent's role.
+
+---
+
+## Part 12 — The Plan-Mode Gates Pattern
+
+`design-orchestrator` demonstrates a pattern worth reusing in any long-running orchestrator: **explicit confirmation gates at every phase boundary**.
+
+### The problem without gates
+
+A 5-phase pipeline that auto-proceeds will run for minutes before the user sees output. If Phase 1 goes in the wrong direction (wrong technology choices, wrong scope), the user has wasted 10 minutes of agent compute and must restart. Worse, the user feels no ownership over a design they never approved step-by-step.
+
+### How gates work
+
+At the end of each phase, the orchestrator:
+1. Presents a short summary of what was just produced (file names + one-line description of key decisions)
+2. Describes what the next phase will do
+3. Asks the user to say "proceed" or to give feedback
+
+```
+[Phase 3 completes]
+
+Orchestrator: "Design files written:
+  - architecture-design.md — single-process Windows Service, BackgroundService host
+  - schema-design.md — SQLite WAL mode, 2 tables (audit_log, file_baselines)
+  - api-design.md — 3 read-only endpoints on port 5100
+
+Next step — Pipeline (Phase 4): I will run sequence-planner, code-scaffolder,
+and test-planner in parallel.
+
+Say 'proceed' to run the pipeline, or tell me what to revise first."
+
+[User: proceed]
+
+[Phase 4 completes]
+
+Orchestrator: "Pipeline complete:
+  - pipeline/sequence-diagrams.md — diagrams for 5 flows
+  - pipeline/code-scaffolding.md — stubs generated
+  - pipeline/test-plan.md — test cases per requirement
+
+Next step — Design Review (Phase 5): full 8-dimension review.
+Say 'proceed' or 'skip review'."
+```
+
+### Implementing gates in your own orchestrator
+
+1. **Write the phase summary inline** — don't delegate it. The orchestrator has all the context; a subagent would need to re-read files.
+2. **Name the specific next action** — "I will spawn X and Y in parallel" is more trustworthy than "I will continue."
+3. **Offer a skip path** — let the user stop early ("skip review") for cases where they only need the intermediate outputs.
+4. **Enforce the gate in the Rules section** — add a rule like "Do not proceed to Phase N without explicit user confirmation." This prevents the model from optimistically skipping past the gate when it believes the next step is obvious.
+
+### When NOT to use gates
+
+Gates add latency — each gate is a round-trip. Don't gate steps the user has no meaningful decision to make about (e.g., writing a formatting header, creating output subfolders). Gate only at boundaries where the user might want to:
+- Change direction before expensive work runs
+- Review intermediate output before it is used as input to the next phase
+- Stop early with partial output
 

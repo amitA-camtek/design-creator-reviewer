@@ -22,26 +22,28 @@
                 ▼                           ▼
      ┌──────────────────┐      ┌─────────────────────────────┐
      │   (inline work)  │      │       full-validator        │
-     │  Phase 0–3:      │      │   8-dimension parallel run  │
-     │  Discovery →     │      └──────────────┬──────────────┘
+     │  Phase 0–0.5:    │      │   8-dimension parallel run  │
+     │  Discovery Qs →  │      └──────────────┬──────────────┘
      │  Alternatives →  │                     │
      │  Approval →      │                     │
      │  Write files     │                     │
      └────────┬─────────┘                     │
               │ Phase 4 (parallel)             │
-              ▼                               ▼
-   ┌──────────────────────┐    (see Review Pipeline section)
+              │ [user confirms first]          ▼
+              ▼                   (see Review Pipeline section)
+   ┌──────────────────────┐
    │  sequence-planner    │
    │  code-scaffolder     │ ← spawned in parallel → pipeline/
    │  test-planner        │
    └──────────┬───────────┘
               │ Phase 5 (sequential then parallel)
+              │ [user confirms, or "skip review" stops here]
               ▼
    ┌──────────────────────┐
    │   full-validator     │ → review/
    │   (+ fix-generator)  │
    └──────────┬───────────┘
-              │
+              │ Synthesise findings
               ▼
    ┌──────────────────────┐   ┌──────────────────────┐
    │ implementation-plan  │   │  powerpoint-generator│ ← parallel
@@ -89,9 +91,17 @@ requirements.md
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PHASE 0 — Requirements Analysis                                    │
 │  design-orchestrator reads requirements, checks service-context.md  │
-│  Infers service name; tells user alternatives are coming            │
+│  Infers service name; tells user questions are coming               │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ (no user input needed)
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PHASE 0.5 — Discovery questions                                    │
+│  Asks 2–4 targeted questions in one message:                        │
+│  tech constraints, operational constraints, quality priorities,     │
+│  deadlines — only what the requirements don't already specify       │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │ User answers
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PHASE 1 — Three integrated alternatives                            │
@@ -112,8 +122,9 @@ requirements.md
 │  PHASE 3 — Write design files  (done directly, no delegation)       │
 │  explore/service-context.md (finalized with tech fields)            │
 │  architecture-design.md  ·  schema-design.md  ·  api-design.md     │
+│  Presents summary → waits for user confirmation to continue         │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │
+                               │ Explicit user confirmation ("proceed")
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PHASE 4 — Pipeline subagents  (spawned IN PARALLEL)                │
@@ -125,8 +136,9 @@ requirements.md
 │   │sequence-       │  │code-           │  │test-plan.md      │     │
 │   │diagrams.md     │  │scaffolding.md  │  │                  │     │
 │   └────────────────┘  └────────────────┘  └──────────────────┘     │
+│  Presents summary → waits for user confirmation or "skip review"    │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │ All three complete
+                               │ "proceed" (runs Phase 5) or "skip review" (stops)
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PHASE 5 — Auto-review, auto-fix, and presentation                  │
@@ -135,10 +147,16 @@ requirements.md
 │     → review/comprehensive-review-report.md                         │
 │     → review/fix-patches.md                                         │
 │                                                                     │
-│  2. Write implementation-plan.md  (direct, no delegation)           │
-│  3. Write design-package-summary.md  (direct, no delegation)        │
+│  2. Synthesise findings: identify the single blocking issue,        │
+│     classify Critical findings as design blockers vs impl fixes,    │
+│     determine dependency order, group High findings by component    │
 │                                                                     │
-│  4. powerpoint-generator  (parallel with or after step 3)          │
+│  3. Write implementation-plan.md  (direct, no delegation)           │
+│     Includes Phase 6a (design blockers) + Phase 6b (impl fixes)     │
+│     + "What to do next" section                                     │
+│  4. Write design-package-summary.md  (direct, no delegation)        │
+│                                                                     │
+│  5. powerpoint-generator  (parallel with or after step 4)           │
 │     → assets/{service_name}-design.pptx                             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -297,10 +315,12 @@ User triggers review
 - `service-context.md` is the shared contract — every specialist agent reads it to adapt to the target service.
 - Specialist review agents never write output files directly; they return raw findings to their orchestrator.
 - Phase 4 pipeline agents (`sequence-planner`, `code-scaffolder`, `test-planner`) are always launched in parallel; all write into `{output_folder}/pipeline/`.
-- Phase 5 runs sequentially after Phase 4: `full-validator` first (→ `review/`), then `implementation-plan.md` and `design-package-summary.md` (direct), then `powerpoint-generator` (→ `assets/`).
+- Phase 5 runs sequentially after Phase 4: `full-validator` first (→ `review/`), then synthesise findings, then `implementation-plan.md` and `design-package-summary.md` (direct), then `powerpoint-generator` (→ `assets/`).
 - `full-validator` always invokes `fix-generator` after writing the report — never skipped.
 - `design-orchestrator` writes Phase 3 design files directly (no delegation to `architecture-designer`, `schema-designer`, or `api-designer`).
-- `design-orchestrator` never asks technology questions — it proposes all technology choices in Phase 1 alternatives.
+- `design-orchestrator` asks 2–4 discovery questions in Phase 0.5 (once, in a single message) before generating alternatives — it does not ask technology questions, it proposes all technology choices in Phase 1.
+- `design-orchestrator` requires explicit user approval before leaving Phase 2 and explicit confirmation before starting Phase 4 (pipeline) and Phase 5 (review).
+- Phase 5 (review) is optional — if the user says "skip review" after Phase 4, `design-package-summary.md` is written without the Review Appendix and the pipeline stops.
+- `implementation-plan.md` classifies Critical findings as either Phase 6a design blockers (fix before any coding) or Phase 6b implementation must-fixes (fix during coding), and includes a "What to do next" section naming the single most important first action.
 - `powerpoint-generator` requires Python 3 + python-pptx; it installs the library silently if missing.
-- `design-orchestrator` requires explicit user approval before leaving Phase 2.
 - All output files must live inside `output_folder` — never next to the requirements file.

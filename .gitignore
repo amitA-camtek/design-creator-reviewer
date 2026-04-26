@@ -1,7 +1,6 @@
 # Output folders
-output/
-output_old/
-output_sevvice-context/
+output_*/
+
 
 # .NET build artifacts
 bin/

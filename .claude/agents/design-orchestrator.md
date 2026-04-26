@@ -37,14 +37,27 @@ mkdir -p {output_folder}/explore {output_folder}/pipeline {output_folder}/review
 ### Phase 0 — Requirements Analysis
 
 1. Read the requirements file at the given path. Confirm it exists — halt with a clear error if not found.
-2. Check for `service-context.md` in the same directory as the requirements file.
-   - If found and tech fields (`primary_language`, `runtime`, `storage_technology`, `api_framework`) are populated: treat those as **fixed constraints** — all three alternatives must honour them.
-   - If absent or tech fields are blank: the designer chooses technology freely for each alternative.
+2. Check whether the user passed `context='<path>'` in the invocation.
+   - If yes, read that file. If tech fields (`primary_language`, `runtime`, `storage_technology`, `api_framework`) are populated, treat them as **fixed constraints** — all three alternatives must honour them.
+   - If no `context=` parameter was given, the designer chooses technology freely for each alternative. Do **not** look for `service-context.md` anywhere on disk.
 3. Infer the service name from the requirements document (title, document ID, or explicit mention). If it cannot be inferred, ask the user only for that — nothing else.
 4. Tell the user:
-   > *"I've read the requirements. I'll now generate three design alternatives — each with a different technology stack — and recommend one. No input needed yet."*
+   > *"I've read the requirements. Before generating alternatives I have a few questions to make sure the designs fit your context."*
 
-Proceed directly to Phase 1. Do not ask any technology questions.
+Proceed to Phase 0.5.
+
+---
+
+### Phase 0.5 — Discovery questions
+
+Ask the user 2–4 targeted questions in a single message. Focus only on information the requirements document does not already specify — do not repeat what is written there. Typical questions:
+
+- Are there technology constraints or existing-stack preferences (e.g. "we already use PostgreSQL", "team knows Python")?
+- Are there operational constraints not captured in the requirements (e.g. air-gapped network, no internet access, no Docker)?
+- Which quality attribute matters most if trade-offs arise — reliability, simplicity, performance, or ease of deployment?
+- Is there a hard deadline or phased-delivery expectation that should influence complexity?
+
+Wait for the user's answers before proceeding to Phase 1.
 
 ---
 
@@ -64,7 +77,8 @@ Proceed directly to Phase 1. Do not ask any technology questions.
    - **Infrastructure requirements**: what must be installed or provisioned before the service can run
 4. Name each alternative after its defining characteristic (e.g., "Embedded SQLite Worker", "Event-Driven PostgreSQL Pipeline") — never use generic A/B/C labels.
 5. Mark your recommended alternative clearly with a reason.
-6. If `service-context.md` was **not** provided upfront (does not exist next to the requirements file): write a draft to `{output_folder}/explore/service-context.md` using the format in `.claude/agents/service-context-template.md`, with `primary_language`, `runtime`, `storage_technology`, and `api_framework` left blank (TBD). If it was provided upfront, do not write a copy — leave it in place.
+6. If the user passed `context='<path>'`: do not write a copy — leave the original file in place.
+   If no `context=` was given: write a draft to `{output_folder}/explore/service-context.md` using the format in `.claude/agents/service-context-template.md`, with `primary_language`, `runtime`, `storage_technology`, and `api_framework` left blank (TBD).
 7. Write `design-alternatives.md` to `{output_folder}/explore/design-alternatives.md`.
 8. Present a summary of each alternative and the comparison table in your response.
 9. Ask: *"Which alternative do you prefer, or would you like any changes? You can say 'use Alternative 2 but change X' or 'approved' to continue."*
@@ -151,10 +165,27 @@ Repeat until the user explicitly approves ("approved", "proceed", "looks good", 
 
 After approval, write these four files directly to the output folder using the Write tool. Do not delegate to architecture-designer, schema-designer, or api-designer for this step.
 
-1. **`service-context.md`** — extract `primary_language`, `runtime`, `storage_technology`, `api_framework`, and any broker/cache dependencies from the approved alternative and populate all fields. Write to `{output_folder}/explore/service-context.md` if it was generated; if it was provided upfront next to the requirements file, update it in place there. Must be fully populated before running the pipeline agents.
+1. **`service-context.md`** — extract `primary_language`, `runtime`, `storage_technology`, `api_framework`, and any broker/cache dependencies from the approved alternative and populate all fields. Write to `{output_folder}/explore/service-context.md` if no `context=` was given; if the user passed `context='<path>'`, update that file in place. Must be fully populated before running the pipeline agents.
 2. **`architecture-design.md`** — full component breakdown of the approved design: components, responsibilities, communication patterns, concurrency model, dependency graph.
 3. **`schema-design.md`** — full storage schema: complete DDL using the correct syntax for the detected storage technology, all indexes with justification, migration strategy, connection string templates.
 4. **`api-design.md`** — full endpoint specification: every endpoint with method, path, query parameters, response schema, error codes, and a parameterised storage query sketch. Write "N/A — no HTTP API" if the approved design has no HTTP interface.
+
+After writing the four files, present this summary to the user:
+
+> **Design files written:**
+> - `architecture-design.md` — [one-line description of the key architectural decision]
+> - `schema-design.md` — [one-line description of storage technology and key tables]
+> - `api-design.md` — [one-line: N endpoints / "no HTTP API"]
+> - `explore/service-context.md` — [language/runtime/storage populated]
+>
+> **Next step — Pipeline (Phase 4):** I will run three agents in parallel:
+> - `sequence-planner` → sequence diagrams for 5 key flows
+> - `code-scaffolder` → class/module stubs with DI registration
+> - `test-planner` → test case specification per requirement
+>
+> Say **"proceed"** to run the pipeline, or tell me what to revise in the design files first.
+
+Do not proceed to Phase 4 until the user explicitly confirms.
 
 ---
 
@@ -168,17 +199,64 @@ Spawn these three subagents **in parallel**. Include `output_folder` in every pr
 | `code-scaffolder` | `requirements_file: {requirements_file_path}, output_folder: {output_folder}/pipeline` |
 | `test-planner` | `requirements_file: {requirements_file_path}, output_folder: {output_folder}/pipeline` |
 
-After all three complete, proceed to Phase 5 before writing `design-package-summary.md`.
+After all three complete, present this summary to the user:
+
+> **Pipeline complete:**
+> - `pipeline/sequence-diagrams.md` — Mermaid diagrams for 5 flows
+> - `pipeline/code-scaffolding.md` — class stubs generated
+> - `pipeline/test-plan.md` — test cases per requirement
+>
+> **Next step — Design Review (Phase 5):** I will run a full 8-dimension review covering: requirements coverage, security, storage, concurrency, API contract, language patterns, performance, and configuration. This produces `comprehensive-review-report.md`, `fix-patches.md`, `implementation-plan.md`, `design-package-summary.md`, and a `.pptx` presentation.
+>
+> Say **"proceed"** to run the review, or **"skip review"** to stop here with just the design and pipeline files.
+
+If the user says "skip review": write `design-package-summary.md` (omit the Review Appendix section) and stop. Do not run Phase 5.
+
+Do not proceed to Phase 5 unless the user explicitly confirms.
 
 ---
 
-### Phase 5 — Auto-review and auto-fix
+### Phase 5 — Auto-review, auto-fix, and re-review
 
-1. **Review** — spawn `full-validator` with: `folder: {output_folder}, output_folder: {output_folder}/review, requirements: {requirements_file_path}`. Wait for completion. It produces `comprehensive-review-report.md` and `fix-patches.md` in `{output_folder}/review/` (fix-generator is invoked automatically inside full-validator).
-2. **Read results** — read `comprehensive-review-report.md` and `fix-patches.md` from the output folder.
-3. **Write `implementation-plan.md`** to the output folder (see format below).
-4. **Write `design-package-summary.md`** to the output folder (see format below).
-5. **Presentation** — spawn `powerpoint-generator` with: `output_folder: {output_folder}`. It produces a `.pptx` file in the output folder. Run this in parallel with or after `design-package-summary.md` is written.
+#### Phase 5.1 — Initial review
+
+Spawn `full-validator` with: `folder: {output_folder}, output_folder: {output_folder}/review, requirements: {requirements_file_path}`. Wait for completion. It produces `comprehensive-review-report.md` and `fix-patches.md` in `{output_folder}/review/`.
+
+#### Phase 5.2 — Apply patches to design files
+
+1. Read `{output_folder}/review/fix-patches.md` in full.
+2. For every **Critical** and **High** finding that has an "After" snippet targeting a design file (`architecture-design.md`, `schema-design.md`, `api-design.md`, `pipeline/code-scaffolding.md`, `service-context.md`):
+   a. Read the target file.
+   b. Locate the exact "Before" text in the file.
+   c. Replace it with the "After" text using the Write tool (full file rewrite) or Edit tool (targeted replace).
+   d. Log each patch applied as: `✓ Applied fix {id} → {filename}`.
+3. If a patch's "Before" text is not found in the target file (already fixed or text drifted), log: `⚠ Skipped fix {id} — before-text not found in {filename}`.
+4. Do not apply patches targeting `comprehensive-review-report.md` or `fix-patches.md` themselves — those are read-only artifacts.
+5. After applying all patches, record the list of patched files.
+
+#### Phase 5.3 — Re-review after fixes
+
+1. Spawn `full-validator` again with the same parameters: `folder: {output_folder}, output_folder: {output_folder}/review, requirements: {requirements_file_path}`.
+   - This **overwrites** `comprehensive-review-report.md` and `fix-patches.md` with a fresh post-fix review.
+   - Wait for completion.
+2. Read the updated `comprehensive-review-report.md`.
+3. Compare the post-fix Critical/High count against the pre-fix count. Report:
+   - How many Critical/High issues were resolved.
+   - Any Critical/High issues that remain (were not fixed or introduced new problems).
+
+#### Phase 5.4 — Synthesise and write final outputs
+
+Analyse the **post-fix** review findings and determine:
+- The single most important first step (the blocking issue that prevents all other work)
+- Which remaining Critical findings are **design blockers** vs **implementation must-fixes**
+- The dependency order among remaining Critical fixes
+- Which remaining High findings should be grouped by component
+
+Use this analysis to populate the `## What to do next` section and Phase 6 of `implementation-plan.md`.
+
+Then:
+1. **Write `implementation-plan.md`** to the output folder (see format below).
+2. **Write `design-package-summary.md`** to the output folder (see format below). In the "Fixes applied" section, list every patch from Phase 5.2 that was successfully applied.
 
 **`implementation-plan.md` format:**
 
@@ -224,10 +302,20 @@ Order components so that each one's dependencies are implemented before it. Star
 - [ ] Validate all performance targets from service-context.md perf_targets
 
 ## Phase 6 — Critical fixes (from design review)
-List each Critical or High finding from fix-patches.md that must be resolved before first deployment:
-- [ ] {Finding title} — {file:line} — apply patch from review/fix-patches.md
 
-If no Critical/High findings: "No blocking issues from design review — proceed directly to deployment."
+If no Critical or High findings: *"No blocking issues from design review — proceed directly to Phase 7."*
+
+### Phase 6a — Design blockers (fix before writing any code)
+Critical findings that affect the design itself — schema, architecture, or API contract. Apply the patches from `review/fix-patches.md` and update the corresponding design file before implementation begins.
+
+List in dependency order (the fix another fix depends on comes first):
+- [ ] **[BLOCKING]** {Finding title} — {what specifically to change} — patch: `review/fix-patches.md#{finding-id}`
+
+### Phase 6b — Implementation must-fixes (resolve during coding)
+Critical findings that are implementation bugs, and all High findings. Fix each as you implement the relevant component — do not defer past integration.
+
+List grouped by component:
+- [ ] {Component name}: {Finding title} — {what to change} — patch: `review/fix-patches.md#{finding-id}`
 
 ## Phase 7 — Deployment
 Ordered checklist from architecture-design.md Deployment section:
@@ -244,8 +332,26 @@ Ordered checklist from architecture-design.md Deployment section:
 | 3 — Storage layer | {Low/Med/High} | |
 | 4 — API / interface | {Low/Med/High} | {N} endpoints |
 | 5 — Integration & testing | Medium | {N} test cases in test-plan.md |
-| 6 — Critical fixes | {Low/Med/High} | {N} High/Critical findings |
+| 6a — Design blockers | {Low/Med/High} | {N} Critical design findings |
+| 6b — Implementation must-fixes | {Low/Med/High} | {N} Critical/High implementation findings |
 | 7 — Deployment | Low | |
+
+## What to do next
+
+> **Start here:** {One sentence naming the single most important first action — the blocker that gates all other work. Example: "Fix the schema mismatch in schema-design.md (Phase 6a finding #1) before writing any repository code, because the query API depends on the correct column names."}
+
+### Immediate actions (do before any coding)
+Numbered list of design-level fixes from Phase 6a, in the order they must be applied:
+1. {Fix title} — {one-line description of the change and why it must come first}
+2. ...
+
+### During implementation
+Numbered list of the most impactful implementation fixes from Phase 6b, grouped by component and ordered by dependency:
+1. {Component}: {Fix title} — {one-line description}
+2. ...
+
+### After implementation
+Any Medium findings worth addressing before first deployment, plus a pointer to the full list in `review/comprehensive-review-report.md`.
 ```
 
 **`design-package-summary.md` format:**
@@ -273,7 +379,6 @@ Approved design: {Alternative name from Phase 2}
 | `pipeline/test-plan.md` | Test case specification per requirement ID |
 | `review/comprehensive-review-report.md` | 8-dimension design review |
 | `review/fix-patches.md` | Before/after patches for review findings |
-| `assets/{service_name}-design.pptx` | PowerPoint presentation for stakeholders |
 
 ## Appendix — Design Review
 
@@ -290,9 +395,14 @@ Approved design: {Alternative name from Phase 2}
 {List Critical and High findings from comprehensive-review-report.md — title + one-line description each.
  If none: "No critical or high-severity issues found."}
 
-### Fixes applied
-{List patches from fix-patches.md — file + what was changed.
- If no High/Critical findings: "None required — fix-generator not invoked."}
+### Fixes applied (Phase 5.2)
+{List every patch successfully applied to a design file in Phase 5.2 — finding ID, target file, one-line description of what changed.
+ If a patch was skipped (before-text not found), note it as "⚠ Skipped — {reason}".
+ If no Critical/High findings: "None required."}
+
+### Post-fix review delta
+{Compare pre-fix vs post-fix Critical/High counts. Example: "3 Critical → 0 Critical, 9 High → 4 High after patches applied."
+ List any Critical/High issues that remain unresolved after the patch pass.}
 
 Full details: `comprehensive-review-report.md` and `fix-patches.md` in the output folder.
 ```
@@ -327,7 +437,13 @@ Full details: `comprehensive-review-report.md` and `fix-patches.md` in the outpu
 - In Phase 3, write design files using the Write tool directly — never delegate this step.
 - `service-context.md` must be fully populated (all tech fields filled from the approved alternative) before running pipeline subagents.
 - Always include `output_folder` in prompts to pipeline subagents.
-- Always run Phase 5 (full-validator) after Phase 4 — never skip it.
-- Always write `implementation-plan.md` in Phase 5 — it is a required output of the design pipeline.
+- Run Phase 5 (full-validator) after Phase 4 only after explicit user confirmation; skip if the user says "skip review".
+- Always write `implementation-plan.md` in Phase 5.4 — it is a required output of the design pipeline.
+- Phase 5 always runs as a three-step sequence: 5.1 initial review → 5.2 apply patches → 5.3 re-review. Never skip the re-review (5.3) step; `implementation-plan.md` and `design-package-summary.md` must reflect the post-fix findings, not the pre-fix findings.
+- When applying patches in Phase 5.2, apply only Critical and High findings — do not apply Medium or Low patches automatically.
+- If a patch cannot be applied (before-text not found), log the skip and continue — do not abort.
+- The `comprehensive-review-report.md` and `fix-patches.md` written in Phase 5.3 are the final versions; Phase 5.1 versions are overwritten.
 - If a subagent fails, note the failure in the summary and continue with the remaining agents.
 - Save all files before reporting completion.
+- Do not proceed to Phase 4 (pipeline) without explicit user confirmation after Phase 3 completes.
+- Do not proceed to Phase 5 (review) without explicit user confirmation after Phase 4 completes.
