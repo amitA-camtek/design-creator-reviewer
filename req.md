@@ -20,6 +20,14 @@ C:\Claude\design-creator-reviewer\filesSummery\system.md
 codebase folder
 C:\Claude\design-creator-reviewer\filesSummery\C:\CamtekGit\BIS\Sources
 
+in c:\job\status.ini — File 
+It has three parameters under [UC_PROGRAM]:
+Key	Description	Example
+ProgramName	Active machine program 
+ProductName	Active job name	
+RecipeName	Active recipe name
+It is the global singleton updated continuously by Falcon.Net on every machine-state transition, so it always reflects what is currently loaded and running.
+
 ---
 
 ## 2. Service Operation
