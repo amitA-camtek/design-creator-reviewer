@@ -1,0 +1,1 @@
+Read the instructions from `.claude/agents/skills/fullreview.md` and execute them with the arguments provided.

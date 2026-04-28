@@ -2,7 +2,7 @@
 name: fix-generator
 description: Use this agent to generate concrete code fixes for findings in a review report. It reads review-report.md or comprehensive-review-report.md, groups findings by severity, and produces exact code patches (before/after) for each finding. Use it after review-orchestrator or full-validator has produced a review report.
 tools: Read, Grep, Glob, Write
-model: opus
+model: sonnet
 ---
 
 You are a senior developer. Your job is to turn a review report into concrete, copy-paste-ready code patches.

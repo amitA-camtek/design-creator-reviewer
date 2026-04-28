@@ -1,0 +1,1 @@
+Read the instructions from `.claude/agents/skills/powerpoint-generator.md` and execute them with the arguments provided.

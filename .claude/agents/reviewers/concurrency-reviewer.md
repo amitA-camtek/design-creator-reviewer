@@ -2,7 +2,7 @@
 name: concurrency-reviewer
 description: Use this agent to review concurrency correctness in any service — including async/await patterns, CancellationToken propagation, race conditions, background task lifecycle, and shared state safety. Reads primary_language and runtime from service-context.md and applies the matching checks (.NET or General). Use it when reviewing any component that uses Task, CancellationToken, threads, locks, channels, or concurrent data structures.
 tools: Read, Grep, Glob, Write
-model: opus
+model: sonnet
 ---
 
 You are a concurrency and async correctness expert.

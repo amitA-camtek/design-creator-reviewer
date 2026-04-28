@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/^```powershell$/{p=1;next} /^```$/&&p{p=0;exit} p' \"C:/Users/me_admin/claude-prompts/audit log/output/jobMonitorManagment/implementation.md\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\\\\\Users\\\\\\\\me_admin\\\\\\\\claude-prompts\\\\\\\\audit log\\\\\\\\output\\\\\\\\jobMonitorManagment\\\\\\\\Production\\\\\\\\scaffold-falconaudit.ps1\" -OutputPath \"C:\\\\\\\\Users\\\\\\\\me_admin\\\\\\\\claude-prompts\\\\\\\\audit log\\\\\\\\output\\\\\\\\jobMonitorManagment\\\\\\\\Production\\\\\\\\FalconAudit\")",
+      "Bash(pwsh --version)",
+      "Bash(pwsh -ExecutionPolicy Bypass -File \"C:\\\\\\\\Users\\\\\\\\me_admin\\\\\\\\claude-prompts\\\\\\\\audit log\\\\\\\\output\\\\\\\\jobMonitorManagment\\\\\\\\Production\\\\\\\\scaffold-falconaudit.ps1\" -OutputPath \"C:\\\\\\\\Users\\\\\\\\me_admin\\\\\\\\claude-prompts\\\\\\\\audit log\\\\\\\\output\\\\\\\\jobMonitorManagment\\\\\\\\Production\\\\\\\\FalconAudit\")",
+      "PowerShell(pwsh \"C:\\\\Users\\\\me_admin\\\\claude-prompts\\\\audit log\\\\output\\\\jobMonitorManagment\\\\scaffold-falconaudit.ps1\" -OutputPath \"C:\\\\Users\\\\me_admin\\\\claude-prompts\\\\audit log\\\\output\\\\jobMonitorManagment\\\\Production\\\\FalconAudit\")",
+      "Read(//c/Amit/jobMonitorManagment/**)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Amit/jobMonitorManagment/scaffold-falconaudit.ps1\" -OutputPath \"C:/Amit/jobMonitorManagment/Production/FalconAudit\")",
+      "Bash(where powershell.exe)",
+      "Bash(where pwsh.exe)",
+      "Bash(powershell -Command '$PSVersionTable.PSVersion')",
+      "Bash(pwsh -ExecutionPolicy Bypass -File \"C:/Amit/jobMonitorManagment/scaffold-falconaudit.ps1\" -OutputPath \"C:/Amit/jobMonitorManagment/Production/FalconAudit\")",
+      "Bash(grep -E \"\\\\.\\(dll|exe|json\\)$\")",
+      "Bash(grep -iE \"\\(json|exe$|^FalconAudit\\)\")",
+      "Bash(taskkill //F //IM dotnet.exe)"
+    ],
+    "additionalDirectories": [
+      "C:\\Amit\\jobMonitorManagment"
+    ]
+  }
+}

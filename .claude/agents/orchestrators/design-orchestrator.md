@@ -50,14 +50,18 @@ Proceed to Phase 0.5.
 
 ### Phase 0.5 — Discovery questions
 
-Ask the user 2–4 targeted questions in a single message. Focus only on information the requirements document does not already specify — do not repeat what is written there. Typical questions:
+Ask the user targeted questions **ONE AT A TIME**. Ask one question, wait for the answer, then ask the next if still needed. Focus only on information the requirements document does not already specify — do not repeat what is written there. Stop when you have enough to generate meaningful alternatives (typically 2–4 questions total).
+
+Typical questions to draw from (ask only what is relevant and not already answered by the requirements):
 
 - Are there technology constraints or existing-stack preferences (e.g. "we already use PostgreSQL", "team knows Python")?
 - Are there operational constraints not captured in the requirements (e.g. air-gapped network, no internet access, no Docker)?
 - Which quality attribute matters most if trade-offs arise — reliability, simplicity, performance, or ease of deployment?
 - Is there a hard deadline or phased-delivery expectation that should influence complexity?
 
-Wait for the user's answers before proceeding to Phase 1.
+Ask → wait for answer → ask next question if still needed → repeat until enough is known.
+
+Do NOT batch questions into a single message.
 
 **After receiving the user's answers**: call `EnterPlanMode` to enter plan mode. All design work (Phases 1 and 2) happens inside plan mode. The user reviews the alternatives, adds comments, and requests changes while in plan mode. Do not call `ExitPlanMode` until the user explicitly approves the design.
 
@@ -433,9 +437,27 @@ Do not proceed to Phase 6 unless the user explicitly confirms.
 
 ### Phase 6 — Production Build
 
-Spawn the `production-builder` subagent with a prompt that includes:
+#### Phase 6.1 — Create project files
+
+Spawn `production-file-creator` with a prompt that includes:
 
 ```
+output_folder = "{output_folder}"
+```
+
+Wait for it to complete. If it reports an error or cannot find the service-context, relay the error to the user and stop.
+
+Extract `production_root` from its result (e.g., `{output_folder}/Production/{service_name}`).
+
+Announce to the user:
+> "Project files created in `{production_root}`. Building now (up to 10 cycles)..."
+
+#### Phase 6.2 — Build and run
+
+Spawn `production-build-runner` with a prompt that includes:
+
+```
+production_root = "{production_root}"
 output_folder = "{output_folder}"
 ```
 
@@ -464,6 +486,7 @@ Wait for it to complete. Relay its outcome to the user verbatim.
 
 - Always read the requirements file before anything else in design mode — halt with a clear message if it is missing.
 - Do not ask the user technology questions — the designer proposes all technology choices in Phase 1.
+- Ask discovery questions ONE AT A TIME in Phase 0.5 — never batch them into a single message. Ask → wait → ask → wait until sufficient context is gathered.
 - Call `EnterPlanMode` after receiving Phase 0.5 discovery answers and before generating alternatives in Phase 1. All design work and iteration (Phases 1–2) happens inside plan mode.
 - Call `ExitPlanMode` immediately after the user explicitly approves the design. Do not call it earlier or later. Do not ask for a second confirmation — approval is sufficient.
 - Do not proceed past Phase 2 (i.e., do not start Phase 3) without calling `ExitPlanMode` first.

@@ -2,7 +2,7 @@
 name: requirements-checker
 description: Use this agent to verify that code, logic, or design decisions comply with the engineering requirements document for any service. Use it when reviewing an implementation for completeness, checking if a requirement is satisfied, or finding which requirements are missing from the codebase. Reads requirement ID format and groups from service-context.md.
 tools: Read, Grep, Glob, Write
-model: opus
+model: sonnet
 ---
 
 You are a requirements compliance expert.

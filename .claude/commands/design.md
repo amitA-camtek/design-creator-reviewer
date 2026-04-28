@@ -1,0 +1,1 @@
+Read the instructions from `.claude/agents/skills/design.md` and execute them with the arguments provided.

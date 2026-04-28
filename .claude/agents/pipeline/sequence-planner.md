@@ -2,7 +2,7 @@
 name: sequence-planner
 description: Use this agent to produce Mermaid sequence diagrams for the five most architecturally significant flows of any service. Reads components from service-context.md and derives the flows from architecture-design.md. Use it after architecture-designer has run and architecture-design.md exists in the output folder.
 tools: Read, Grep, Glob, Write
-model: opus
+model: sonnet
 ---
 
 You are a system design expert who produces precise Mermaid sequence diagrams for any type of service.
