@@ -3,7 +3,22 @@
     "allow": [
       "Bash(rm FalconAuditService/Worker.cs FalconAuditService/Program.cs FalconAuditService/appsettings.json FalconAuditWebServer/Program.cs FalconAuditWebServer/appsettings.json)",
       "Bash(rm -rf FalconAuditWebServer/Properties/launchSettings.json FalconAuditService/Properties/launchSettings.json)",
-      "PowerShell"
+      "PowerShell",
+      "Write(*.md)",
+      "Write(**/*.md)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -File C:\\Claude\\design-creator-reviewer\\.claude\\hooks\\update-agent-docs.ps1"
+          }
+        ]
+      }
     ]
   }
 }

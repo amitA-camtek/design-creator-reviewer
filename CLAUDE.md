@@ -12,21 +12,46 @@ The agents and skills live in `.claude/agents/`. All agents are domain-agnostic 
 
 ## Auto-routing — Natural Language Triggers
 
-When the user's request matches one of these intents, invoke the corresponding agent or skill **automatically** without asking for confirmation:
+**"If the user requests something, it happens."** No slash commands required. When the user's request matches one of the intents below, invoke the corresponding agent or skill **automatically and immediately** without asking for confirmation.
 
 | User intent | Invoke |
 |---|---|
-| Design a new service / create a design / run the design pipeline / "design this from requirements" | `design-orchestrator` with the requirements file path |
-| Review a design or codebase (quick / focused) | `review-orchestrator` with the folder path |
-| Full review / all dimensions / comprehensive review | `full-validator` with the folder path |
-| Build production / create production files / build this design | `/build` skill with the output folder |
-| Generate slides / create a presentation / make a PowerPoint | `/powerpoint-generator` skill with the output folder |
+| Design a new service / create a design / run the design pipeline / "design this" / "make a design for X" / "I need an architecture for X" | `design-orchestrator` with the requirements file path |
+| Review a design or codebase (quick / focused / "take a look at") | `review-orchestrator` with the folder path |
+| Full review / all dimensions / comprehensive review / "deep review" / "review everything" | `full-validator` with the folder path |
+| Build production / create production files / build this design / "generate the code" / "implement it" | `/build` skill with the output folder |
+| Generate slides / create a presentation / make a PowerPoint / "stakeholder deck" | `/powerpoint-generator` skill with the output folder |
+| "Check the quality" / "gate check" / "quick quality check on the design" | `quality-gate` agent with the output folder |
 
-**Argument extraction**: pull file paths and folder paths from the user's message. If a required path is missing, ask for only that — nothing else.
+**Argument extraction**: pull file paths and folder paths directly from the user's message. If a required path is missing, ask for only that — nothing else.
+
+**Upfront intent flags**: if the user's request includes phrases like:
+- "design only" / "no build" / "stop at design" → skip Phase 6 (production build)
+- "no review" → skip Phase 5 (full review); run Phase 4b tests only
+- "just the architecture" → run Phases 3 and 3.5 only, write design files, stop
 
 ---
 
-## Skills (slash commands)
+## Pipeline Flow (fully automatic after alternative choice)
+
+Once the user approves a design alternative, the pipeline runs without asking "proceed?" between phases:
+
+```
+Phase 0   Requirements read
+Phase 0.5 Discovery Q&A (one at a time)
+[Plan mode: user picks alternative]
+Phase 3   Write design files (architecture, schema, api, service-context)
+Phase 3.5 Quality gate → auto-fix Critical issues (up to 3 cycles)
+Phase 3.6 Fast review (requirements + security + storage in parallel) → auto-patch
+Phase 4   Pipeline agents in parallel (sequence-planner, code-scaffolder, test-planner)
+Phase 4b  Unit tests: create test files → run → auto-fix (up to 5 cycles)
+Phase 5   Full 8-dimension review → auto-patch → re-review
+Phase 6   Production build → build-feedback loop if failures (up to 3 outer cycles)
+```
+
+---
+
+## Skills (slash commands — optional, natural language preferred)
 
 | Skill | Usage | What it does |
 |---|---|---|
@@ -42,11 +67,14 @@ When the user's request matches one of these intents, invoke the corresponding a
 
 | Agent | Model | Purpose |
 |---|---|---|
-| `design-orchestrator` | opus | Single entry point: design a new service (interactive) or review an existing one |
+| `design-orchestrator` | opus | Single entry point: design a new service (interactive then automatic) or review an existing one |
 | `review-orchestrator` | opus | Focused 3-agent review: requirements + security + storage |
 | `full-validator` | opus | Full 8-dimension review (all agents in parallel) |
+| `quality-gate` | sonnet | Fast design-file quality check — Critical/High issues only; used in Phase 3.5 |
 | `production-file-creator` | opus | Creates fully-implemented production source files from a design package |
 | `production-build-runner` | opus | Builds the project, fixes compile errors (up to 10 cycles), and runs it |
+| `test-file-creator` | sonnet | Creates fully-implemented test files from test-plan.md + code-scaffolding.md |
+| `test-runner` | sonnet | Runs test suite, auto-fixes failures (up to 5 cycles), writes test-report.md |
 | `architecture-designer` | opus | Standalone: produces 3 architecture alternatives, user chooses one |
 | `schema-designer` | sonnet | Standalone: produces 3 schema alternatives, user chooses one |
 | `api-designer` | sonnet | Standalone: produces 3 API design alternatives, user chooses one |
@@ -81,6 +109,10 @@ When the user's request matches one of these intents, invoke the corresponding a
 │   └── fix-patches.md
 ├── assets/
 │   └── {service_name}-design.pptx
+├── Production/
+│   ├── {service_name}/           # fully-implemented source tree
+│   ├── test-report.md            # unit test results
+│   └── run-report.md             # build + startup result
 ├── architecture-design.md
 ├── schema-design.md
 ├── api-design.md
@@ -97,3 +129,8 @@ When the user's request matches one of these intents, invoke the corresponding a
 **Review mode**: `@design-orchestrator review 'path/to/folder'`
 
 The `context=` parameter is optional. Pass it only to lock the technology stack to an existing `service-context.md`. When omitted, the agent designs technology choices freely.
+
+**Upfront flags** (include in your invocation to control pipeline depth):
+- `design only` — stop after Phase 3.5 (quality gate); no scaffolding, no build
+- `no build` — skip Phase 6; stop after full review and implementation plan
+- `no review` — skip Phase 5 full review; run Phase 4b tests then build
