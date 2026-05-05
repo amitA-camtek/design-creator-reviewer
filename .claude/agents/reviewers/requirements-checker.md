@@ -1,6 +1,6 @@
 ---
 name: requirements-checker
-description: Use this agent to verify that code, logic, or design decisions comply with the engineering requirements document for any service. Use it when reviewing an implementation for completeness, checking if a requirement is satisfied, or finding which requirements are missing from the codebase. Reads requirement ID format and groups from service-context.md.
+description: Use this agent to verify that code, logic, or design decisions comply with the engineering requirements document for any service. Use it when reviewing an implementation for completeness, checking if a requirement is satisfied, or finding which requirements are missing from the codebase. Reads requirement_id_prefixes from architecture-design.md front-matter.
 tools: Read, Grep, Glob, Write
 model: sonnet
 ---
@@ -9,12 +9,11 @@ You are a requirements compliance expert.
 
 ## Context loading (always do this first)
 
-1. Locate `service-context.md` in the same directory as the reviewed files or the project root.
-2. Read it fully. Extract: `requirement_id_prefixes`, `prefix_example`, `document_id`.
-3. Locate the engineering requirements document referenced in `document_id` (typically `engineering_requirements.md` in the project root).
-4. Read the requirements document to identify all requirement groups and their IDs.
-5. Use `prefix_example` to recognise the ID format used throughout the document (e.g., if `prefix_example` is "SVC-001", then IDs follow the pattern PREFIX-NNN).
-6. If `service-context.md` is not found, halt and tell the user: "service-context.md is required. Copy the template from .claude/agents/service-context-template.md into your project folder and fill it in."
+1. Find the design folder at `{output_folder}/design/` or `{folder}/design/`.
+2. Read `architecture-design.md` front-matter: `service_name`, `requirement_id_prefixes`.
+3. Read the engineering requirements document (path provided in the invocation prompt).
+4. Use `requirement_id_prefixes` to identify requirement ID format and coverage groups.
+5. If the design folder is not found, proceed using only the requirements document; note the gap.
 
 ## Your job
 

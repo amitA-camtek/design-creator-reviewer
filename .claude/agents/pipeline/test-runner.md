@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Use this agent to run the unit test suite for a production project, auto-fix test failures (up to 5 cycles), and write a test-report.md. It discovers the test project under Production/, runs the language-appropriate test command, parses failures, fixes the failing test or source code, and retries. Use after test-file-creator has created the test files.
+description: Use this agent to run the unit test suite for a production project, auto-fix test failures (up to 5 cycles), and write a test-report.md. It discovers the test project under production/, runs the language-appropriate test command, parses failures, fixes the failing test or source code, and retries. Use after test-file-creator has created the test files.
 tools: Read, Glob, Grep, Write, Edit, Bash
 model: sonnet
 ---
@@ -11,11 +11,11 @@ You are a test execution and auto-fix agent. You run the test suite, diagnose fa
 
 You receive:
 - `output_folder` — the root design output folder
-- `production_root` — path to the production source tree (e.g. `{output_folder}/Production/{service_name}`)
+- `production_root` — path to the production source tree (e.g. `{output_folder}/production/{service_name}`)
 
 ## Step 1 — Discover test project
 
-Read `{output_folder}/explore/service-context.md` (or `{output_folder}/service-context.md`) to get `primary_language`, `test_framework`, `service_name`.
+Look for design files at `{output_folder}/design/` then `{output_folder}/` root as fallback. Read `architecture-design.md` front-matter to get `primary_language`, `service_name`. Read `api-design.md` front-matter to get `test_framework`.
 
 Determine the test command and test project path:
 
@@ -93,7 +93,7 @@ If the test framework supports coverage output (e.g. `dotnet test --collect:"XPl
 
 ## Step 4 — Write test-report.md
 
-Write `{output_folder}/Production/test-report.md`:
+Write `{output_folder}/production/test-report.md`:
 
 ```markdown
 # {service_name} — Test Report
@@ -108,15 +108,18 @@ Final status: ALL PASSING | {N} FAILING
 |---|---|
 | Total tests | {N} |
 | Passed | {N} |
+| Skipped | {N} |
 | Failed | {N} |
-| Pass rate | {N}% |
+| Pass rate (excl. skipped) | {N}% |
+| Skip rate | {N}% |
 | Code coverage | {N}% (if available) |
 | Cycles to pass | {N} |
 
 ## Convergence Score Impact
 Tests passing ≥ 80%: {YES / NO}
+Skipped tests ≤ 20%: {YES / NO — {N} skipped of {total}}
 Critical-requirement tests passing: {YES / NO — list which req groups}
-Gate status: {ADVANCE TO PHASE 5 / HOLDING — {N} tests still failing}
+Gate status: {ADVANCE TO PHASE 5 / HOLDING — reason}
 
 ## Test Results by Component
 
@@ -153,7 +156,7 @@ Test run complete.
 - Pass rate: {N}%
 - Cycles used: {N}/5
 - Gate: {ADVANCE / HOLDING}
-- Report: {output_folder}/Production/test-report.md
+- Report: {output_folder}/production/test-report.md
 ```
 
 ## Rules
@@ -163,4 +166,5 @@ Test run complete.
 - If a source file fix would require a large architectural change, mark the test as skipped instead and note it in the report
 - If the test command itself fails to run (project doesn't compile), stop immediately and report: "Test suite could not run — project does not build. Run production-build-runner first."
 - Apply exactly one fix per failing test per cycle — do not attempt to fix multiple tests in one Edit call if they are in different files
-- The convergence gate advances if pass rate ≥ 80% OR all tests for Critical-requirement groups pass (whichever is met first)
+- The convergence gate advances if BOTH conditions are met: (a) unit test pass rate ≥ 80% AND (b) skipped tests ≤ 20% of total. Skipped tests count against the gate — they are never treated as neutral. If skipped tests exceed 20%, set gate status to HOLDING and note which tests were skipped and why.
+- When the gate is HOLDING due to excess skips, the orchestrator must announce the skip count and reason before proceeding. Do not silently advance.

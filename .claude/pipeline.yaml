@@ -1,0 +1,72 @@
+# Pipeline manifest — controls which agents run in each phase.
+# Edit this file to add or remove agents without touching orchestrator code.
+# Orchestrators read this file at startup and fall back to built-in defaults if it is absent.
+#
+# To add a new reviewer to all reviews: add its name under phases.review.agents.
+# review-orchestrator runs an auto-skip pass over this list — agents whose
+# inputs aren't present (no API, no DB, no source code yet, etc.) are dropped
+# automatically. Use the `agents=...` or `force_run_all=true` parameters at
+# call time if you need to override the auto-skip behaviour.
+
+phases:
+
+  quality-gate:
+    agents:
+      - quality-gate
+    parallel: false
+    on_critical: auto_fix
+    max_fix_cycles: 3
+
+  scaffolding:
+    agents:
+      - sequence-planner
+      - code-scaffolder
+      - test-planner
+    parallel: true
+
+  unit-tests:
+    sequence:
+      - production-file-creator
+      - test-file-creator
+      - test-runner
+    parallel: false
+
+  review:
+    # Full candidate list. review-orchestrator's auto-skip pass picks the
+    # actual subset based on what's present in the target folder:
+    #   - design-only invocations (Phase 3.6) drop concurrency/language/perf-checker
+    #     because no source exists yet
+    #   - missing api-design.md drops api-contract-reviewer
+    #   - missing schema-design.md drops storage-reviewer
+    #   - empty perf_targets drops performance-checker
+    #   - empty required_config_keys drops configuration-validator
+    #   - missing ux-design.md drops ux-reviewer
+    #   - security-reviewer is never skipped (universal OWASP checks)
+    agents:
+      - requirements-checker
+      - security-reviewer
+      - storage-reviewer
+      - concurrency-reviewer
+      - api-contract-reviewer
+      - language-patterns-reviewer
+      - performance-checker
+      - configuration-validator
+      - ux-reviewer
+    parallel: true
+    output: review-report.md
+    always_run_fix_generator: true
+
+  # production-file-creator fans out per project group internally (one parallel
+  # subagent per .Api / .Core / .Storage / etc.), and each subagent batches
+  # independent Write calls in parallel.
+  # production-build-runner fixes independent compile errors in parallel batches
+  # (up to 5 files per message) within each cycle.
+  # The two stages still run sequentially relative to each other (parallel: false)
+  # — file creation must complete before the build can succeed.
+  production-build:
+    sequence:
+      - production-file-creator
+      - production-build-runner
+    parallel: false
+    feedback_loop: true
+    max_outer_cycles: 3

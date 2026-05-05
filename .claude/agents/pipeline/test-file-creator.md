@@ -1,6 +1,6 @@
 ---
 name: test-file-creator
-description: Use this agent to generate fully-implemented test files for a production project. It reads pipeline/test-plan.md, pipeline/code-scaffolding.md, and service-context.md to produce actual test code (not stubs) in the correct language and test framework. Writes files to Production/{service_name}/{service_name}.Tests/ (or language-appropriate equivalent). Use after production-file-creator has initialized the project structure.
+description: Use this agent to generate fully-implemented test files for a production project. It reads pipeline/test-plan.md, pipeline/code-scaffolding.md, and design front-matter to produce actual test code (not stubs) in the correct language and test framework. Writes files to production/{service_name}/{service_name}.Tests/ (or language-appropriate equivalent). Use after production-file-creator has initialized the project structure.
 tools: Read, Glob, Write, Bash
 model: sonnet
 ---
@@ -11,31 +11,37 @@ You are a test code generator. You produce fully-implemented unit and integratio
 
 You receive `output_folder` — the root design output folder containing the design package.
 
+## Context loading (always do this first)
+
+1. Look for design files at `{output_folder}/design/`. If not found there, look at `{output_folder}/` root.
+2. Read `architecture-design.md` front-matter: `service_name`, `primary_language`, `runtime`, `components`.
+3. Read `api-design.md` front-matter: `test_framework`.
+4. Read `{output_folder}/pipeline/test-plan.md` for test cases.
+5. Read `{output_folder}/pipeline/code-scaffolding.md` to derive mock classes and interface signatures.
+6. Glob `{output_folder}/production/**` to find the project structure.
+
 ## Step 1 — Discover artifacts
 
-Read these files:
-1. `{output_folder}/explore/service-context.md` — get `primary_language`, `runtime`, `test_framework`, `service_name`, `components`
-2. `{output_folder}/pipeline/test-plan.md` — get the full test case specification
-3. `{output_folder}/pipeline/code-scaffolding.md` — get interface/class signatures to derive mocks from
-4. Glob `{output_folder}/Production/**` to find the production root and existing source files
-
-If service-context.md is not found at the first path, try:
-- `{output_folder}/service-context.md`
-- Glob `{output_folder}/**/*context*.md`
+Read these files (using paths resolved from context loading above):
+1. `{output_folder}/design/architecture-design.md` front-matter — get `primary_language`, `runtime`, `service_name`, `components`
+2. `{output_folder}/design/api-design.md` front-matter — get `test_framework`
+3. `{output_folder}/pipeline/test-plan.md` — get the full test case specification
+4. `{output_folder}/pipeline/code-scaffolding.md` — get interface/class signatures to derive mocks from
+5. Glob `{output_folder}/production/**` to find the production root and existing source files
 
 ## Step 2 — Determine test project location and framework
 
-Based on `primary_language` from service-context.md:
+Based on `primary_language` from architecture-design.md front-matter:
 
 | Language | Test project location | Test framework (from test_framework field) | Test runner command |
 |---|---|---|---|
-| C# / .NET | `Production/{service_name}/{service_name}.Tests/` | xUnit (default) or as specified | `dotnet test` |
-| Python | `Production/{service_name}/tests/` | pytest (default) or as specified | `pytest` |
-| TypeScript / JavaScript | `Production/{service_name}/src/__tests__/` or `tests/` | jest (default) or as specified | `npm test` |
+| C# / .NET | `production/{service_name}/{service_name}.Tests/` | xUnit (default) or as specified | `dotnet test` |
+| Python | `production/{service_name}/tests/` | pytest (default) or as specified | `pytest` |
+| TypeScript / JavaScript | `production/{service_name}/src/__tests__/` or `tests/` | jest (default) or as specified | `npm test` |
 | Go | Same package as source, `_test.go` suffix | Built-in `testing` | `go test ./...` |
-| Java | `Production/{service_name}/src/test/java/` | JUnit 5 (default) | `mvn test` |
+| Java | `production/{service_name}/src/test/java/` | JUnit 5 (default) | `mvn test` |
 
-Use `test_framework` from service-context.md if specified; fall back to language defaults above.
+Use `test_framework` from api-design.md front-matter if specified; fall back to language defaults above.
 
 ## Step 3 — Generate test files
 

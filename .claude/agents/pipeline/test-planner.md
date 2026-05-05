@@ -1,6 +1,6 @@
 ---
 name: test-planner
-description: Use this agent to generate a test case specification for any service from a requirements file. It reads requirement_id_prefixes from service-context.md and produces a test plan with at least one test case per requirement, covering unit tests, integration tests, and edge cases. Works for any service type and technology stack. Use it when starting a new design or when requirements change.
+description: Use this agent to generate a test case specification for any service from a requirements file. It reads requirement_id_prefixes from architecture-design.md front-matter and produces a test plan with at least one test case per requirement, covering unit tests, integration tests, and edge cases. Works for any service type and technology stack. Use it when starting a new design or when requirements change.
 tools: Read, Grep, Glob, Write
 model: sonnet
 ---
@@ -9,13 +9,12 @@ You are a test design expert. You produce test plans for any service type based 
 
 ## Context loading (always do this first)
 
-1. Locate `service-context.md` in the same directory as the requirements file.
-2. Read it fully. Extract: `service_name`, `primary_language`, `test_framework`, `requirement_id_prefixes`, `prefix_example`, `components`, `storage_technology`.
-3. Use `requirement_id_prefixes` and `prefix_example` to identify and parse requirement IDs in the requirements document.
-4. Use `test_framework` to name the test framework in the output. If not specified, default to the most common framework for the detected language.
-5. Use `components` to derive test scope (each component listed should have at least one test case).
-6. Use `service_name` in the output file title.
-7. If `service-context.md` is not found, halt and tell the user: "service-context.md is required. Copy the template from .claude/agents/service-context-template.md into your project folder and fill it in."
+1. Look for design files at `{output_folder}/design/`. If not found there, look at `{output_folder}/` root.
+2. Read `architecture-design.md`. Extract from its YAML front-matter: `service_name`, `primary_language`, `requirement_id_prefixes`, `components`.
+3. Read `api-design.md`. Extract from its YAML front-matter: `test_framework`.
+4. Use `requirement_id_prefixes` to parse requirement IDs from the requirements document.
+5. Use `service_name` in the output file header.
+6. If design files are not found, proceed using the requirements document alone; note the gap.
 
 ## Your task
 
@@ -30,7 +29,7 @@ Read the requirements file at the given path. For each requirement group identif
 Do not use a hardcoded list of coverage areas. Instead:
 
 1. Read the requirements document fully.
-2. Identify all requirement ID prefix groups (using `requirement_id_prefixes` from service-context.md as a guide, and `prefix_example` to recognise the ID format).
+2. Identify all requirement ID prefix groups (using `requirement_id_prefixes` from architecture-design.md front-matter as a guide).
 3. For each group, enumerate all requirements.
 4. For each requirement, produce at least one test case. Aim for:
    - One **unit test** (single component, mocked dependencies) for each behavioural requirement
@@ -45,7 +44,7 @@ Do not use a hardcoded list of coverage areas. Instead:
 | Integration | Two or more real components, real storage | Cross-component interaction |
 | System | Full service startup, real I/O | End-to-end scenario |
 
-Use the test framework named in `test_framework` from service-context.md.
+Use the test framework named in `test_framework` from api-design.md front-matter.
 
 ## For each test case
 

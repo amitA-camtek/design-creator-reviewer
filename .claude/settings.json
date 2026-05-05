@@ -5,7 +5,11 @@
       "Bash(rm -rf FalconAuditWebServer/Properties/launchSettings.json FalconAuditService/Properties/launchSettings.json)",
       "PowerShell",
       "Write(*.md)",
-      "Write(**/*.md)"
+      "Write(**/*.md)",
+      "Write(.claude/agents/*.md)",
+      "Write(.claude/agents/**/*.md)",
+      "Edit(.claude/agents/*.md)",
+      "Edit(.claude/agents/**/*.md)"
     ]
   },
   "hooks": {

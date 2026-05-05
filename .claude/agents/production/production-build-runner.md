@@ -1,6 +1,6 @@
 ---
 name: production-build-runner
-description: Use this agent to build a production project that was created from a design package, fix compile errors iteratively (max 10 cycles), and run the project on success. Discovers service-context by content rather than hardcoded file name. Use it after production-file-creator has created the project files, or invoke it standalone if the project files already exist at production_root.
+description: Use this agent to build a production project that was created from a design package, fix compile errors iteratively (max 10 cycles), and run the project on success. Discovers context from design file front-matter. Use it after production-file-creator has created the project files, or invoke it standalone if the project files already exist at production_root.
 tools: Read, Glob, Grep, Write, Edit, Bash
 model: opus
 ---
@@ -9,20 +9,16 @@ You are a Production Build Runner. You build a project, fix compile errors in a 
 
 ## Input Parameters
 
-- `production_root` (required): path to the created project directory (e.g., `{output_folder}/Production/{service_name}`).
-- `output_folder` (required): path to the design output folder — used to read service-context and write reports.
+- `production_root` (required): path to the created project directory (e.g., `{output_folder}/production/{service_name}`).
+- `output_folder` (required): path to the design output folder — used to read design context and write reports.
 
 ---
 
-## Step 1 — Discover Service Context
+## Context loading (always do this first)
 
-Locate the service-context file using the same discovery order as production-file-creator:
-1. Read `{output_folder}/service-context.md`
-2. Glob `{output_folder}/*context*.md` → first match
-3. Glob all `{output_folder}/*.md` → first file containing both `service_name:` and `primary_language:`
-4. Repeat in `{output_folder}/explore/`
-
-Extract `primary_language` and `service_name`.
+1. Look for design files at `{output_folder}/design/` then `{output_folder}/` root as fallback.
+2. Read `architecture-design.md` front-matter: `service_name`, `primary_language`.
+3. If design files not found, infer language from source file extensions in `production_root`.
 
 Determine the **build command** based on `primary_language`:
 
@@ -77,6 +73,17 @@ WHILE NOT build_success AND cycle < 10:
       Go         → lines matching: (.+\.go):(\d+):(\d+): (.+)
       TypeScript → lines matching: (.+\.ts)\((\d+),(\d+)\): error TS(\d+): (.+)
 
+    Identify **independent error groups**: a set of files whose errors do not reference each other
+    (e.g. errors in file B do not name a symbol being changed in file A). Independent file fixes are
+    safe to apply in parallel; dependent ones must be serialised across cycles (fix A this cycle,
+    let B re-error or auto-resolve next cycle).
+
+    Plan the per-file fixes first (read each file, decide the edits), then apply them in **parallel
+    batches of up to 5 files per message** — one batched message containing one Edit/Write per file.
+    Within a single file, keep edits in **reverse line-number order** to avoid offset drift; that
+    ordering is unaffected by cross-file parallelism. If only one file has errors, the batch
+    degenerates to a single Edit and behaviour is identical to before.
+
     For each unique file_path that has errors:
 
       1. Read the file.
@@ -129,7 +136,7 @@ Proceed to Step 4 (Run).
 
 ### If build_success is false (10 cycles exhausted)
 
-Write `{output_folder}/Production/build-errors.md`:
+Write `{output_folder}/production/build-errors.md`:
 
 ```markdown
 # Build Errors — {service_name}
@@ -156,7 +163,7 @@ Production folder: {production_root}
 ```
 
 Report to caller:
-> "Build failed after 10 cycles. Remaining errors saved to `{output_folder}/Production/build-errors.md`."
+> "Build failed after 10 cycles. Remaining errors saved to `{output_folder}/production/build-errors.md`."
 
 **Stop — do not attempt to run the project.**
 
@@ -177,7 +184,7 @@ Determine startup status:
 
 ## Step 5 — Write Run Report
 
-Write `{output_folder}/Production/run-report.md`:
+Write `{output_folder}/production/run-report.md`:
 
 ```markdown
 # {service_name} — Production Run Report
@@ -234,6 +241,7 @@ Include the path to `run-report.md` or `build-errors.md` as appropriate.
 
 - Run the build command with full output capture — never suppress stderr.
 - Fix errors in reverse line-number order within each file to avoid offset drift when editing.
+- Apply fixes to independent files in parallel (up to 5 Edits in one message); only serialise across cycles when one file's fix changes a symbol another file's errors reference.
 - After applying fixes to a file, do not re-read it until the next build cycle — trust the edit.
 - Never attempt to run the project if the build did not succeed.
 - Write the appropriate report file after every terminal outcome (success or failure).

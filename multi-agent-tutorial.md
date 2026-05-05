@@ -342,25 +342,19 @@ name: review-orchestrator
 tools: Read, Glob, Write, Agent
 model: opus
 ```
-Runs 3 agents (requirements, security, storage) and synthesises one prioritised action plan. Use for a quick focused check.
-
-```yaml
-name: full-validator
-tools: Read, Glob, Write, Agent
-model: opus
-```
-Runs all 8 agents in parallel and writes `comprehensive-review-report.md` + `fix-patches.md`. Use as a full gate before finalising a design.
+Single review entry point. Reads `phases.review.agents` from the manifest as the candidate list (up to 9 specialists), then runs a smart auto-skip pass that drops candidates whose inputs aren't present in the target folder. Always synthesises one prioritised report (`review-report.md`) and invokes `fix-generator` to produce `fix-patches.md`.
 
 ```
-@full-validator Review the design in 'C:\path\to\design\folder'
+@review-orchestrator Review the design in 'C:\path\to\design\folder'
 ```
 
-### When to use which orchestrator
+### Smart auto-skip — how the orchestrator picks reviewers
 
-| Orchestrator | Agents | Use when |
-|---|---|---|
-| `review-orchestrator` | 3 | Quick check — requirements, security, storage only |
-| `full-validator` | 8 | Full gate — all 8 dimensions before finalising a design |
+`security-reviewer` always runs (universal OWASP checks). The other eight reviewers are dropped when their inputs are absent: no `api-design.md` → no `api-contract-reviewer`; no source code yet → no `concurrency-reviewer` or `language-patterns-reviewer`; etc. The report's "Skipped reviewers" section explains every drop.
+
+Override knobs:
+- `agents=security,storage` — explicit subset; bypasses auto-skip.
+- `force_run_all=true` — disables auto-skip entirely.
 
 ---
 
@@ -393,7 +387,7 @@ Phase 3   Write architecture, schema, API, service-context files
           → pause: show summary, ask "proceed or revise?"  ← waits
 Phase 4   Run pipeline agents in parallel (sequence-planner, code-scaffolder, test-planner)
           → pause: show summary, ask "proceed or skip review?" ← waits
-Phase 5   Run full-validator (8 dimensions), synthesise recommendations, write implementation plan
+Phase 5   Run review-orchestrator (smart auto-skip selects reviewers), synthesise recommendations, write implementation plan
 ```
 
 ### Phase 0.5 — Discovery questions
@@ -440,8 +434,8 @@ After all three complete, the orchestrator pauses again and presents a summary. 
 
 ### Phase 5 — Review, synthesis, and recommendations
 
-1. Spawns `full-validator` (8 agents in parallel).
-2. Reads `comprehensive-review-report.md` and `fix-patches.md`.
+1. Spawns `review-orchestrator` (the smart auto-skip pass selects which of the 9 specialist reviewers actually run, based on what the folder contains).
+2. Reads `review-report.md` and `fix-patches.md`.
 3. **Synthesises recommendations** — determines the single blocking issue that gates all other work, classifies Critical findings as design blockers vs implementation bugs, and orders fixes by dependency.
 4. Writes `implementation-plan.md` with:
    - **Phase 6a — Design blockers:** Critical findings that must fix the design files before any code is written, in dependency order
@@ -466,7 +460,7 @@ After all three complete, the orchestrator pauses again and presents a summary. 
 │   ├── code-scaffolding.md
 │   └── test-plan.md
 ├── review/
-│   ├── comprehensive-review-report.md
+│   ├── review-report.md
 │   └── fix-patches.md
 └── assets/
     └── {service_name}-design.pptx

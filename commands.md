@@ -30,53 +30,34 @@ Runs the complete interactive design pipeline: architecture → schema → API �
 /design C:\projects\myservice\req.md output=C:\projects\myservice\design context=C:\projects\myservice\service-context.md
 ```
 
-**Produces:** `architecture-design.md`, `schema-design.md`, `api-design.md`, `sequence-diagrams.md`, `code-scaffolding.md`, `test-plan.md`, `comprehensive-review-report.md`, `fix-patches.md`, `design-package-summary.md`
+**Produces:** `architecture-design.md`, `schema-design.md`, `api-design.md`, `sequence-diagrams.md`, `code-scaffolding.md`, `test-plan.md`, `review-report.md`, `fix-patches.md`, `design-package-summary.md`
 
 ---
 
-### `/review` — Focused 3-dimension review
+### `/review` — Service review with smart auto-skip
 
 ```
-/review <folder> [requirements=<file>]
+/review <folder> [requirements=<file>] [agents=<list>] [force_run_all=true]
 ```
 
-Runs requirements, security, and storage checks in parallel. Fast — good for a quick sanity check.
+Invokes `review-orchestrator`. Up to 9 specialist reviewers are candidates; the orchestrator's smart auto-skip pass runs only those whose inputs are actually present in the folder (e.g. `api-contract-reviewer` is skipped if there is no API; `concurrency-reviewer` is skipped on design-only folders). `security-reviewer` is never skipped.
 
 | Argument | Required | Description |
 |---|---|---|
 | `<folder>` | Yes | Path to the design output folder or codebase to review |
 | `requirements=<file>` | No | Requirements file for completeness checking |
+| `agents=<comma-list>` | No | Explicit reviewer subset (e.g. `agents=security,storage`); bypasses auto-skip |
+| `force_run_all=true` | No | Disable auto-skip; run every candidate reviewer regardless of inputs |
 
 **Examples:**
 ```
 /review C:\projects\myservice\design
 /review C:\projects\myservice\design requirements=C:\projects\myservice\req.md
+/review C:\projects\myservice\design agents=security,storage
+/review C:\projects\myservice\design force_run_all=true
 ```
 
-**Produces:** `review/review-report.md`
-
----
-
-### `/fullreview` — Full 8-dimension review
-
-```
-/fullreview <folder> [requirements=<file>]
-```
-
-Runs all 8 specialist reviewers in parallel: requirements, security, storage, concurrency, API contract, language patterns, performance, configuration. More thorough than `/review`, takes longer.
-
-| Argument | Required | Description |
-|---|---|---|
-| `<folder>` | Yes | Path to the design output folder or codebase to review |
-| `requirements=<file>` | No | Requirements file for completeness checking |
-
-**Examples:**
-```
-/fullreview C:\projects\myservice\design
-/fullreview C:\projects\myservice\design requirements=C:\projects\myservice\req.md
-```
-
-**Produces:** `review/comprehensive-review-report.md`
+**Produces:** `review/review-report.md` and `review/fix-patches.md`. The report's "Skipped reviewers" section explains why each skipped reviewer was dropped.
 
 ---
 
@@ -131,8 +112,8 @@ These phrases trigger the same pipelines automatically — no slash command need
 | "design a new service from this requirements file" | `/design` pipeline |
 | "create a design for `<path>`" | `/design` pipeline |
 | "review this folder" | `/review` |
-| "do a full review of `<path>`" | `/fullreview` |
-| "run a comprehensive review" | `/fullreview` |
+| "do a full review of `<path>`" | `/review` (smart auto-skip handles depth) |
+| "run a comprehensive review" | `/review` (smart auto-skip handles depth) |
 | "build production code from the design" | `/build` |
 | "create a PowerPoint for this design" | `/powerpoint-generator` |
 | "generate slides for `<path>`" | `/powerpoint-generator` |
@@ -206,9 +187,9 @@ Then optionally:
 ```
 /review C:\projects\myservice\src requirements=C:\projects\myservice\req.md
 ```
-or for full coverage:
+The orchestrator auto-skips reviewers whose inputs aren't present. To force every candidate reviewer to run regardless:
 ```
-/fullreview C:\projects\myservice\src requirements=C:\projects\myservice\req.md
+/review C:\projects\myservice\src requirements=C:\projects\myservice\req.md force_run_all=true
 ```
 
 ### Redesign one layer only (e.g., change the API without re-running everything)

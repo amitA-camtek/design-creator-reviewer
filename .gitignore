@@ -1,6 +1,6 @@
 # Output folders
 output_*/
-
+output/
 
 # .NET build artifacts
 bin/
